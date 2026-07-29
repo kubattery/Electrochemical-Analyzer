@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GITT 분석 — HC-Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0a0e17;
+            --bg-card: rgba(20, 27, 45, 0.8);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --color-primary: #3b82f6;
+            --color-orange: #f59e0b;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --font-sans: 'Outfit', 'Noto Sans KR', sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 배경 그라데이션 오브 */
+        .bg-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.12;
+            pointer-events: none;
+        }
+        .bg-orb-1 {
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, #f59e0b, transparent);
+            top: -150px; left: -150px;
+            animation: orbFloat 8s ease-in-out infinite alternate;
+        }
+        .bg-orb-2 {
+            width: 400px; height: 400px;
+            background: radial-gradient(circle, #3b82f6, transparent);
+            bottom: -100px; right: -100px;
+            animation: orbFloat 10s ease-in-out infinite alternate-reverse;
+        }
+        .bg-orb-3 {
+            width: 300px; height: 300px;
+            background: radial-gradient(circle, #8b5cf6, transparent);
+            top: 50%; right: 20%;
+            animation: orbFloat 6s ease-in-out infinite alternate;
+        }
+
+        @keyframes orbFloat {
+            from { transform: translate(0, 0) scale(1); }
+            to   { transform: translate(30px, 20px) scale(1.1); }
+        }
+
+        /* 격자 패턴 배경 */
+        .grid-bg {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+
+        /* 메인 카드 */
+        .main-card {
+            position: relative;
+            z-index: 10;
+            max-width: 680px;
+            width: 90%;
+            background: linear-gradient(135deg, rgba(20, 27, 45, 0.9), rgba(15, 21, 36, 0.95));
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 24px;
+            padding: 56px 52px;
+            text-align: center;
+            box-shadow:
+                0 0 0 1px rgba(245, 158, 11, 0.05),
+                0 20px 60px rgba(0, 0, 0, 0.6),
+                0 0 120px rgba(245, 158, 11, 0.04);
+            backdrop-filter: blur(20px);
+            animation: cardEntrance 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+        }
+
+        @keyframes cardEntrance {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* 아이콘 영역 */
+        .icon-wrap {
+            width: 96px;
+            height: 96px;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05));
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 28px;
+            position: relative;
+            animation: iconPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes iconPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.1); }
+            50% { box-shadow: 0 0 0 16px rgba(245, 158, 11, 0); }
+        }
+
+        .icon-wrap .material-icons-round {
+            font-size: 48px;
+            color: #f59e0b;
+        }
+
+        /* SOON 배지 */
+        .soon-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #0a0e17;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            padding: 3px 7px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+        }
+
+        /* 텍스트 */
+        .page-tag {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #f59e0b;
+            margin-bottom: 12px;
+            opacity: 0.8;
+        }
+
+        h1 {
+            font-size: 34px;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1.15;
+            margin-bottom: 16px;
+            letter-spacing: -0.5px;
+        }
+
+        h1 span {
+            background: linear-gradient(135deg, #f59e0b, #fbbf24);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .description {
+            font-size: 15px;
+            color: var(--text-muted);
+            line-height: 1.7;
+            margin-bottom: 40px;
+        }
+
+        /* 기능 예정 목록 */
+        .feature-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 40px;
+            text-align: left;
+        }
+
+        .feature-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .feature-item:hover {
+            background: rgba(245, 158, 11, 0.06);
+            border-color: rgba(245, 158, 11, 0.18);
+            transform: translateY(-2px);
+        }
+
+        .feature-item .material-icons-round {
+            font-size: 18px;
+            color: rgba(245, 158, 11, 0.7);
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .feature-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #e5e7eb;
+            margin-bottom: 3px;
+        }
+
+        .feature-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        /* 진행 바 */
+        .progress-section {
+            margin-bottom: 36px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .progress-bar-bg {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 28%;
+            background: linear-gradient(90deg, #f59e0b, #fbbf24);
+            border-radius: 3px;
+            animation: progressPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes progressPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* 버튼 */
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            font-family: var(--font-sans);
+            font-size: 13px;
+            font-weight: 500;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .btn-back:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            transform: translateX(-2px);
+        }
+
+        .btn-back .material-icons-round {
+            font-size: 16px;
+        }
+
+        /* 하단 정보 */
+        .footer-text {
+            margin-top: 28px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.18);
+        }
+    </style>
+</head>
+<body>
+    <!-- 배경 효과 -->
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+    <div class="grid-bg"></div>
+
+    <!-- 메인 카드 -->
+    <div class="main-card">
+        <!-- 아이콘 -->
+        <div class="icon-wrap">
+            <span class="material-icons-round">bolt</span>
+            <span class="soon-badge">SOON</span>
+        </div>
+
+        <p class="page-tag">⚡ GITT Analysis Module</p>
+        <h1>GITT 분석 창<br><span>업데이트 예정</span>입니다</h1>
+        <p class="description">
+            GITT (Galvanostatic Intermittent Titration Technique) 분석 모듈은<br>
+            현재 개발 중입니다. 완성되면 이 창에서 바로 실행할 수 있습니다.
+        </p>
+
+        <!-- 예정 기능 목록 -->
+        <div class="feature-list">
+            <div class="feature-item">
+                <span class="material-icons-round">timeline</span>
+                <div>
+                    <div class="feature-title">확산계수 계산</div>
+                    <div class="feature-desc">Na⁺ 확산계수 (D_Na) 자동 추출</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <span class="material-icons-round">show_chart</span>
+                <div>
+                    <div class="feature-title">전압 이완 분석</div>
+                    <div class="feature-desc">펄스 후 전압 복원 곡선 시각화</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <span class="material-icons-round">scatter_plot</span>
+                <div>
+                    <div class="feature-title">D vs. 용량 그래프</div>
+                    <div class="feature-desc">용량 구간별 확산계수 변화 추이</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <span class="material-icons-round">download</span>
+                <div>
+                    <div class="feature-title">결과 내보내기</div>
+                    <div class="feature-desc">CSV / 논문용 PNG 고화질 출력</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 진행 상태 바 -->
+        <div class="progress-section">
+            <div class="progress-label">
+                <span>개발 진행률</span>
+                <span style="color: #f59e0b; font-weight: 600;">28%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill"></div>
+            </div>
+        </div>
+
+        <!-- 뒤로 가기 버튼 -->
+        <a class="btn-back" onclick="window.close()" href="javascript:void(0)">
+            <span class="material-icons-round">arrow_back</span>
+            일반 분석 창으로 돌아가기
+        </a>
+
+        <p class="footer-text">HC-Analyzer v1.0.0 · GITT Module Coming Soon</p>
+    </div>
+</body>
+</html>

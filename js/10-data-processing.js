@@ -1,58 +1,4 @@
-/* ============================================================================
- * HC-Analyzer  ·  10-data-processing.js
- * 역할: 원시 데이터 파싱(Excel/텍스트) · 사이클 분리 · processData
- *
- * [주의] 클래식 스크립트 방식입니다. 모든 모듈이 하나의 전역(window) 스코프를
- *        공유하므로 index.html에 명시된 <script> 로딩 순서를 반드시 유지하세요.
- *        로딩 순서: 10/15  (이전: js/09-dataset-library.js → 다음: js/11-analysis-metrics.js)
- * ============================================================================ */
-/* ==========================================
-   2. Parser & Data Processing
-   ========================================== */
 
-/**
- * Parses raw Excel (JSON 2D Array) data, filters OCV, detects cycles and charge/discharge segments,
- * and normalizes the data to standard rawBatteryData format.
- */
-/**
- * 엑셀 또는 텍스트 파일에서 파싱된 행 데이터를 정규화하고, 
- * 사이클 컬럼이 없거나 불명확한 경우 Rest 구간을 자동 감지하여 스킵하고 사이클을 쪼갭니다.
- */
-function normalizeAndSplitCycles(dataRows, isAhUnit) {
-    const rawData = [];
-
-    // 1. Ah/g 단위를 mAh/g 단위로 변환
-    dataRows.forEach(row => {
-        if (isAhUnit) {
-            row.capacity = row.capacity * 1000.0;
-        }
-    });
-
-    // 2. 만약 파일 자체에 이미 유효한 사이클 정보가 존재하고 데이터에 퍼져 있다면, 해당 정보를 우선 사용
-    // 단순 행 순번(인덱스) 열을 사이클 열로 오인하지 않도록 평균 한 사이클당 포인트 수(최소 20개)를 검증합니다.
-    const uniqueCycles = new Set(dataRows.map(r => r.excelCycle).filter(c => c > 0));
-    const avgPointsPerCycle = uniqueCycles.size > 0 ? (dataRows.length / uniqueCycles.size) : 0;
-    const hasValidCycle = dataRows.some(r => r.excelCycle > 0) && 
-                         uniqueCycles.size > 1 &&
-                         avgPointsPerCycle >= 20;
-
-    if (hasValidCycle) {
-        console.log("기존 파일의 사이클 정보를 그대로 활용하여 로드합니다.");
-        dataRows.forEach(row => {
-            rawData.push([
-                row.excelCycle > 0 ? row.excelCycle : 1,
-                row.voltage,
-                row.capacity,
-                row.excelCurrent
-            ]);
-        });
-        return rawData;
-    }
-
-    // 3. 사이클 정보가 없거나 불명확한 경우: 자동 사이클 및 Rest 감지 알고리즘 가동
-    console.log("사이클 정보 미감지 -> 자동 사이클 분리 및 Rest 구간 필터링을 실행합니다.");
-
-    // OCV/Rest 임계값: 0.05 mAh/g (0에 근접한 값)
     const REST_THRESHOLD = 0.05;
 
     // ACTIVE 영역을 찾기 위한 인덱스 그룹들 생성
@@ -501,9 +447,11 @@ function processData() {
             // 마지막 포인트의 정규화된 capacity = 실제 충전 용량
             cycleData.totalChargeCap = cycleData.desodiation[cycleData.desodiation.length - 1].capacity;
         }
-    // [메모리 최적화] 저장용 곡선 포인트 상한 적용.
-        //  - ICE / 방전·충전 용량은 위에서 '원본 전체' 기준으로 이미 계산되어 수치 결과는 바뀌지 않습니다.
-        //  - 대용량 파일을 여러 개 로드할 때의 Out-of-memory 방지.
+
+        // [메모리 최적화] 저장용 곡선 포인트 상한 적용.
+        //  - ICE / 방전·충전 용량(totalDischargeCap, totalChargeCap)은 위에서 '원본 전체' 기준으로
+        //    이미 계산되었으므로 이 축소는 저장/렌더용 곡선에만 영향을 주며 수치 결과는 바뀌지 않습니다.
+        //  - 수십만 포인트짜리 대용량 파일을 여러 개 로드할 때의 Out-of-memory(브라우저 메모리 부족)를 방지합니다.
         const STORE_MAX_POINTS = 1000;
         if (cycleData.sodiation.length > STORE_MAX_POINTS) {
             cycleData.sodiation = downsamplePoints(cycleData.sodiation, STORE_MAX_POINTS);
@@ -511,6 +459,8 @@ function processData() {
         if (cycleData.desodiation.length > STORE_MAX_POINTS) {
             cycleData.desodiation = downsamplePoints(cycleData.desodiation, STORE_MAX_POINTS);
         }
+        // 분할이 끝나면 더 이상 사용하지 않는 원본 배열을 즉시 비워 메모리를 추가로 절감합니다.
+        // (기존에도 데이터셋 저장 스냅샷 단계에서 삭제되던 항목이라 다운스트림 영향 없음)
         cycleData.all = [];
         cycleData.rawSodiation = [];
         cycleData.rawDesodiation = [];
@@ -588,4 +538,3 @@ function processData() {
     }
     renderProfileCycleChipsUI();
 }
-

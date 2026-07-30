@@ -501,6 +501,19 @@ function processData() {
             // 마지막 포인트의 정규화된 capacity = 실제 충전 용량
             cycleData.totalChargeCap = cycleData.desodiation[cycleData.desodiation.length - 1].capacity;
         }
+    // [메모리 최적화] 저장용 곡선 포인트 상한 적용.
+        //  - ICE / 방전·충전 용량은 위에서 '원본 전체' 기준으로 이미 계산되어 수치 결과는 바뀌지 않습니다.
+        //  - 대용량 파일을 여러 개 로드할 때의 Out-of-memory 방지.
+        const STORE_MAX_POINTS = 1000;
+        if (cycleData.sodiation.length > STORE_MAX_POINTS) {
+            cycleData.sodiation = downsamplePoints(cycleData.sodiation, STORE_MAX_POINTS);
+        }
+        if (cycleData.desodiation.length > STORE_MAX_POINTS) {
+            cycleData.desodiation = downsamplePoints(cycleData.desodiation, STORE_MAX_POINTS);
+        }
+        cycleData.all = [];
+        cycleData.rawSodiation = [];
+        cycleData.rawDesodiation = [];
     }
 
     // Populate Target Cycle selectors

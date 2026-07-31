@@ -134,8 +134,17 @@ function parseExcelFileQueued(file) {
     reader.onload = (e) => {
         try {
             const data = e.target.result;
-            const workbook = XLSX.read(data, { type: 'array' });
-            const preferredSheets = workbook.SheetNames.filter(name => {
+            const workbook = XLSX.read(data, {
+                type: 'array',
+                dense: true,
+                cellStyles: false,
+                cellNF: false,
+                cellDates: false,
+                cellFormula: false,
+                cellHTML: false,
+                cellText: false,
+                bookVBA: false
+            });            const preferredSheets = workbook.SheetNames.filter(name => {
                 const lower = name.toLowerCase();
                 return lower.includes('data') || lower.includes('raw') || lower.includes('sheet1');
             });

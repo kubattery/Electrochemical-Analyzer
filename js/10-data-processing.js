@@ -24,6 +24,25 @@ function normalizeAndSplitCycles(dataRows, isAhUnit) {
         }
     });
 
+   // [메모리 최적화 · 핵심] 초대용량 파일을 '읽는 즉시' 축소 (Rest/경계 포인트는 보존 → 사이클·용량 정확도 유지)
+    const MAX_RAW_POINTS = 50000;
+    if (dataRows.length > MAX_RAW_POINTS) {
+        const _REST = 0.05;
+        const _stride = Math.ceil(dataRows.length / MAX_RAW_POINTS);
+        const _reduced = [];
+        for (let _i = 0; _i < dataRows.length; _i++) {
+            const _cap = dataRows[_i].capacity;
+            const _isRest = _cap <= _REST;
+            const _prevRest = _i > 0 && dataRows[_i - 1].capacity <= _REST;
+            const _nextRest = _i < dataRows.length - 1 && dataRows[_i + 1].capacity <= _REST;
+            if (_isRest || _prevRest || _nextRest || (_i % _stride === 0)) {
+                _reduced.push(dataRows[_i]);
+            }
+        }
+        console.log(`[메모리 최적화] 원시 포인트 ${dataRows.length} → ${_reduced.length} 로 조기 축소`);
+        dataRows = _reduced;
+    }
+   
     // 2. 파일에 유효한 사이클 정보가 있으면 우선 사용 (인덱스 열 오인 방지: 사이클당 최소 20포인트)
     const uniqueCycles = new Set(dataRows.map(r => r.excelCycle).filter(c => c > 0));
     const avgPointsPerCycle = uniqueCycles.size > 0 ? (dataRows.length / uniqueCycles.size) : 0;

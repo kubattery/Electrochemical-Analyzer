@@ -429,6 +429,31 @@ function shadeHexColor(color, factor) {
     }
     return `rgb(${r}, ${g}, ${b})`;
 }
+/**
+ * Hex 색상을 HSL 값 {h, s, l} 로 변환합니다. hex가 아니면 null 반환.
+ */
+function hexToHsl(color) {
+    if (typeof color !== 'string' || color.charAt(0) !== '#') return null;
+    let hex = color.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    if (hex.length !== 6) return null;
+    const r = parseInt(hex.substring(0, 2), 16) / 255;
+    const g = parseInt(hex.substring(2, 4), 16) / 255;
+    const b = parseInt(hex.substring(4, 6), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0, l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+    }
+    return { h: h * 360, s: s * 100, l: l * 100 };
+}
 function renderRateCapabilityCharts() {
     const ctxCycles  = document.getElementById('chartRateCycles').getContext('2d');
     const ctxSummary = document.getElementById('chartRateSummary').getContext('2d');
@@ -471,41 +496,41 @@ function renderRateCapabilityCharts() {
         }
     ];
  
-  datasetsForCycles.forEach(ds => {
+      datasetsForCycles.forEach(ds => {
         const cycleNumbers = Object.keys(ds.processedCycles).map(Number).sort((a, b) => a - b);
         const trace = [];
         const pointColors = [];
 
-        // C-rate(단계) 총 개수 — 비교 모드에서 단계별 밝기 계산에 사용
         const totalSteps = Math.max(1, Math.ceil(cycleNumbers.length / stepSize));
         const borderClr = ds.lineColor || ds.color || baseColor;
+        const baseHsl = hexToHsl(borderClr);
 
         cycleNumbers.forEach((cNum, idx) => {
             const data = ds.processedCycles[cNum];
             const capVal = currentRateMode === 'charge' ? data.totalChargeCap : data.totalDischargeCap;
             trace.push(capVal);
-            const stepIdx = Math.floor(idx / stepSize);
 
-            if (isCompareMode) {
-                // 비교 모드: 데이터셋 고유 색은 유지하되 C-rate 단계별로 밝기를 달리해 구분
-                const factor = totalSteps > 1 ? stepIdx * (0.65 / (totalSteps - 1)) : 0;
-                pointColors.push(shadeHexColor(borderClr, factor));
+            const stepIdx = Math.floor(idx / stepSize);
+            const t = totalSteps > 1 ? stepIdx / (totalSteps - 1) : 0; // 0(첫 C-rate) ~ 1(마지막)
+
+            if (baseHsl) {
+                // 같은 색 계열(hue) 유지 + 명도를 넓게 벌려 단계별로 뚜렷이 구분
+                const light = 30 + t * 58;                            // 30%(저 C-rate) → 88%(고 C-rate)
+                const sat   = Math.min(95, Math.max(baseHsl.s, 75));  // 선명도 확보
+                pointColors.push(`hsl(${baseHsl.h.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`);
             } else {
-                // 싱글 모드: 기존 팔레트 색상으로 단계 구분
-                pointColors.push(rateBaseColors[stepIdx] || 'rgba(255,255,255,0.5)');
+                pointColors.push(shadeHexColor(borderClr, 0.15 + t * 0.65)); // 폴백
             }
         });
-
-        const bgColors = pointColors;
 
         cycleLineDatasets.push({
             label: ds.customName,
             data: trace,
-            labels: cycleNumbers, // 사용자지정 툴팁
-            borderColor: borderClr,        // 선(line) 색은 원본 그대로 유지
-            backgroundColor: bgColors,
-            pointBackgroundColor: bgColors,
-            pointBorderColor: bgColors,
+            labels: cycleNumbers,
+            borderColor: borderClr,            // 선(line) 색은 원본 그대로
+            backgroundColor: pointColors,
+            pointBackgroundColor: pointColors,
+            pointBorderColor: pointColors,
             pointRadius: 5,
             pointHoverRadius: 7,
             borderWidth: isCompareMode ? 2 : 1.5,

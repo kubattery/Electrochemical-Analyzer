@@ -515,7 +515,7 @@ function renderRateCapabilityCharts() {
 
             if (baseHsl) {
                 // 같은 색 계열(hue) 유지 + 명도를 넓게 벌려 단계별로 뚜렷이 구분
-                const light = 15 + t * 80;                             // 20%(저 C-rate, 진하게) → 90%(고 C-rate, 밝게)
+                const light = 5 + t * 90;                             // 20%(저 C-rate, 진하게) → 90%(고 C-rate, 밝게)
                 const sat   = Math.min(100, Math.max(baseHsl.s, 82));  // 채도 ↑ → 앞쪽 색이 더 진하고 선명
                 pointColors.push(`hsl(${baseHsl.h.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`);
             } else {

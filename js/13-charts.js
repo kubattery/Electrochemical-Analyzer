@@ -406,7 +406,29 @@ function renderSlopePlateauChart(cycleData, cutoffV) {
         }
     });
 }
-
+/**
+ * Hex 색상의 밝기를 조정합니다.
+ * factor > 0 : 흰색 방향으로 밝게 / factor < 0 : 검은색 방향으로 어둡게 (범위 -1 ~ 1)
+ * hex 형식이 아니면 원본 문자열을 그대로 반환합니다(안전장치).
+ */
+function shadeHexColor(color, factor) {
+    if (typeof color !== 'string' || color.charAt(0) !== '#') return color;
+    let hex = color.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    if (hex.length !== 6) return color;
+    let r = parseInt(hex.substring(0, 2), 16);
+    let g = parseInt(hex.substring(2, 4), 16);
+    let b = parseInt(hex.substring(4, 6), 16);
+    if (factor >= 0) {
+        r = Math.round(r + (255 - r) * factor);
+        g = Math.round(g + (255 - g) * factor);
+        b = Math.round(b + (255 - b) * factor);
+    } else {
+        const f = 1 + factor;
+        r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f);
+    }
+    return `rgb(${r}, ${g}, ${b})`;
+}
 function renderRateCapabilityCharts() {
     const ctxCycles  = document.getElementById('chartRateCycles').getContext('2d');
     const ctxSummary = document.getElementById('chartRateSummary').getContext('2d');
@@ -449,30 +471,41 @@ function renderRateCapabilityCharts() {
         }
     ];
  
-    datasetsForCycles.forEach(ds => {
+  datasetsForCycles.forEach(ds => {
         const cycleNumbers = Object.keys(ds.processedCycles).map(Number).sort((a, b) => a - b);
         const trace = [];
         const pointColors = [];
- 
+
+        // C-rate(단계) 총 개수 — 비교 모드에서 단계별 밝기 계산에 사용
+        const totalSteps = Math.max(1, Math.ceil(cycleNumbers.length / stepSize));
+        const borderClr = ds.lineColor || ds.color || baseColor;
+
         cycleNumbers.forEach((cNum, idx) => {
             const data = ds.processedCycles[cNum];
             const capVal = currentRateMode === 'charge' ? data.totalChargeCap : data.totalDischargeCap;
             trace.push(capVal);
             const stepIdx = Math.floor(idx / stepSize);
-            pointColors.push(rateBaseColors[stepIdx] || 'rgba(255,255,255,0.5)');
+
+            if (isCompareMode) {
+                // 비교 모드: 데이터셋 고유 색은 유지하되 C-rate 단계별로 밝기를 달리해 구분
+                const factor = totalSteps > 1 ? stepIdx * (0.65 / (totalSteps - 1)) : 0;
+                pointColors.push(shadeHexColor(borderClr, factor));
+            } else {
+                // 싱글 모드: 기존 팔레트 색상으로 단계 구분
+                pointColors.push(rateBaseColors[stepIdx] || 'rgba(255,255,255,0.5)');
+            }
         });
- 
-        // 비교 모드: 데이터셋 고유색상으로, 싱글 모드: lineColor 기반 처리
-        const borderClr = ds.lineColor || ds.color || baseColor;
-        const bgColors  = isCompareMode ? Array(trace.length).fill(borderClr) : pointColors;
- 
+
+        const bgColors = pointColors;
+
         cycleLineDatasets.push({
             label: ds.customName,
             data: trace,
             labels: cycleNumbers, // 사용자지정 툴팁
-            borderColor: borderClr,
+            borderColor: borderClr,        // 선(line) 색은 원본 그대로 유지
             backgroundColor: bgColors,
             pointBackgroundColor: bgColors,
+            pointBorderColor: bgColors,
             pointRadius: 5,
             pointHoverRadius: 7,
             borderWidth: isCompareMode ? 2 : 1.5,

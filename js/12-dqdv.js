@@ -107,22 +107,29 @@ function updateDqDvView() {
 }
 
 // dQ/dV 차트 렌더링
-function renderDqDvChart() {
-    const canvas = document.getElementById('chartDqDv');
+// opts.canvasId / opts.getInstance / opts.setInstance 로 다른 캔버스에 독립 렌더링 지원(통합 뷰 재사용).
+// opts.skipTable 이 true 이면 dQ/dV 피크 요약 테이블 갱신을 생략합니다.
+function renderDqDvChart(opts = {}) {
+    const canvas = document.getElementById(opts.canvasId || 'chartDqDv');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
-    if (chartDqDvInstance) {
-        chartDqDvInstance.destroy();
+
+    const prevInstance = opts.getInstance ? opts.getInstance() : chartDqDvInstance;
+    if (prevInstance) {
+        prevInstance.destroy();
     }
 
     const checkedDS = getCheckedDatasets();
     const displayDS = checkedDS.length > 0 ? checkedDS : datasetLibrary.filter(d => d.id === activeDatasetId);
 
     if (displayDS.length === 0) {
-        const tbody = document.querySelector('#tableDqDvPeaks tbody');
-        if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">로드된 데이터가 없습니다.</td></tr>`;
+        if (opts.setInstance) opts.setInstance(null);
+        else chartDqDvInstance = null;
+        if (!opts.skipTable) {
+            const tbody = document.querySelector('#tableDqDvPeaks tbody');
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">로드된 데이터가 없습니다.</td></tr>`;
+            }
         }
         return;
     }
@@ -251,7 +258,7 @@ function renderDqDvChart() {
         });
     });
 
-    chartDqDvInstance = new Chart(ctx, {
+    const dqdvInstance = new Chart(ctx, {
         type: 'line',
         data: { datasets: chartDatasets },
         options: {
@@ -310,8 +317,13 @@ function renderDqDvChart() {
         }
     });
 
+    if (opts.setInstance) opts.setInstance(dqdvInstance);
+    else chartDqDvInstance = dqdvInstance;
+
     // 테이블 정보 업데이트 (다중 사이클 선택을 적용하므로 targetCycleNum 매개변수는 무시됨, 캐시 데이터 전달)
-    updateDqDvTable(displayDS, null, stepVVal, qoVal, postAvgVal, computedDqDvCache);
+    if (!opts.skipTable) {
+        updateDqDvTable(displayDS, null, stepVVal, qoVal, postAvgVal, computedDqDvCache);
+    }
 }
 
 // dQ/dV 주요 산화환원 피크 요약 테이블 갱신

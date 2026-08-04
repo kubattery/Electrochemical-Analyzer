@@ -192,6 +192,9 @@
                         <span class="material-icons-round">bolt</span> GITT 분석
                         <span class="coming-soon-badge">SOON</span>
                     </button>
+                    <button class="tab-btn" data-tab="tab-combined">
+                        <span class="material-icons-round">grid_view</span> 데이터 한눈에 보기
+                    </button>
                 </div>
             </header>
 
@@ -563,6 +566,79 @@
                         </div>
                     </div>
                 </div>
+                <!-- Tab 5: 데이터 한눈에 보기 (통합 뷰) -->
+                <div class="tab-panel" id="tab-combined">
+                    <div class="combined-toolbar">
+                        <span class="combined-toolbar-title">
+                            <span class="material-icons-round">grid_view</span> 표시할 그래프 선택
+                        </span>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="profile" checked>
+                            <span>Voltage Profile</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="slope" checked>
+                            <span>Slope / Plateau</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="rate" checked>
+                            <span>Rate Capability</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="dqdv" checked>
+                            <span>dQ/dV</span>
+                        </label>
+                    </div>
+
+                    <p class="combined-empty-msg" id="combinedEmptyMsg" style="display: none;"></p>
+
+                    <div class="combined-grid" id="combinedChartGrid">
+                        <!-- Voltage Profile -->
+                        <div class="dashboard-chart-card combined-card" data-chart="profile">
+                            <div class="card-header">
+                                <h3 class="chart-title">전압 프로파일 (Voltage Profile)</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartProfile"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Slope / Plateau -->
+                        <div class="dashboard-chart-card combined-card" data-chart="slope">
+                            <div class="card-header">
+                                <h3 class="chart-title">Slope / Plateau 영역 하이라이트</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartSlope"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Rate Capability (두 개의 하위 차트) -->
+                        <div class="dashboard-chart-card combined-card" data-chart="rate">
+                            <div class="card-header">
+                                <h3 class="chart-title">Rate Capability</h3>
+                            </div>
+                            <div class="combined-rate-subgrid">
+                                <div class="chart-container">
+                                    <canvas id="combinedChartRateCycles"></canvas>
+                                </div>
+                                <div class="chart-container">
+                                    <canvas id="combinedChartRateSummary"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- dQ/dV -->
+                        <div class="dashboard-chart-card combined-card" data-chart="dqdv">
+                            <div class="card-header">
+                                <h3 class="chart-title">dQ/dV 미분 용량 곡선</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartDqDv"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -607,5 +683,6 @@
     <script src="js/13-charts.js?v=3.0.0"></script>
     <script src="js/14-export.js?v=3.0.0"></script>
     <script src="js/15-profile-cycles.js?v=3.0.0"></script>
+    <script src="js/16-combined-view.js?v=1.0.0"></script>
 </body>
 </html>

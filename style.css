@@ -1959,7 +1959,7 @@ select option {
     min-width: 0;
 }
 
-.combined-rate-subgrid .chart-container { height: 240px; }
+.combined-rate-subgrid .chart-container { height: 280px; }
 
 /* Rate Capability 카드만 3칸(=6등분 중 3칸 = 절반 = 일반 카드의 1.5배) 폭으로 */
 .combined-card[data-chart="rate"] { grid-column: span 3; }

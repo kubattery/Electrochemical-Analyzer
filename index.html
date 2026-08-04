@@ -581,12 +581,12 @@
                             <span>Slope / Plateau</span>
                         </label>
                         <label class="combined-check">
-                            <input type="checkbox" class="combined-chart-toggle" data-chart="rate" checked>
-                            <span>Rate Capability</span>
-                        </label>
-                        <label class="combined-check">
                             <input type="checkbox" class="combined-chart-toggle" data-chart="dqdv" checked>
                             <span>dQ/dV</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="rate" checked>
+                            <span>Rate Capability</span>
                         </label>
                     </div>
 
@@ -613,7 +613,17 @@
                             </div>
                         </div>
 
-                        <!-- Rate Capability (두 개의 하위 차트) -->
+                        <!-- dQ/dV -->
+                        <div class="dashboard-chart-card combined-card" data-chart="dqdv">
+                            <div class="card-header">
+                                <h3 class="chart-title">dQ/dV 미분 용량 곡선</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartDqDv"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Rate Capability (두 개의 하위 차트) — 폭이 넓어 맨 뒤에 배치 -->
                         <div class="dashboard-chart-card combined-card" data-chart="rate">
                             <div class="card-header">
                                 <h3 class="chart-title">Rate Capability</h3>
@@ -625,16 +635,6 @@
                                 <div class="chart-container">
                                     <canvas id="combinedChartRateSummary"></canvas>
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- dQ/dV -->
-                        <div class="dashboard-chart-card combined-card" data-chart="dqdv">
-                            <div class="card-header">
-                                <h3 class="chart-title">dQ/dV 미분 용량 곡선</h3>
-                            </div>
-                            <div class="chart-container">
-                                <canvas id="combinedChartDqDv"></canvas>
                             </div>
                         </div>
                     </div>

@@ -40,11 +40,16 @@ function getProfileLineColor(ds, cycleIndex, totalCycles, selectedDatasetCount) 
     }
 }
 
-function renderOverviewChart(cycleData, isAll = false) {
-    const ctx = document.getElementById('chartProfile').getContext('2d');
-    
-    if (chartProfileInstance) {
-        chartProfileInstance.destroy();
+function renderOverviewChart(cycleData, isAll = false, opts = {}) {
+    // opts.canvasId / opts.getInstance / opts.setInstance 를 지정하면 다른 캔버스에
+    // 독립적으로 렌더링할 수 있습니다(통합 뷰 재사용). 미지정 시 기존 개요 탭 동작을 유지합니다.
+    const canvasEl = document.getElementById(opts.canvasId || 'chartProfile');
+    if (!canvasEl) return;
+    const ctx = canvasEl.getContext('2d');
+
+    const prevInstance = opts.getInstance ? opts.getInstance() : chartProfileInstance;
+    if (prevInstance) {
+        prevInstance.destroy();
     }
 
     const datasets = [];
@@ -209,7 +214,7 @@ function renderOverviewChart(cycleData, isAll = false) {
     const showLegend = selectedDatasetCount >= 2;
     const seenDatasetLabels = new Set();
 
-    chartProfileInstance = new Chart(ctx, {
+    const overviewInstance = new Chart(ctx, {
         type: 'scatter',
         data: { datasets },
         options: {
@@ -259,11 +264,17 @@ function renderOverviewChart(cycleData, isAll = false) {
             }
         }
     });
+
+    if (opts.setInstance) opts.setInstance(overviewInstance);
+    else chartProfileInstance = overviewInstance;
 }
 
-function renderSlopePlateauChart(cycleData, cutoffV) {
-    const ctx = document.getElementById('chartSlopePlateau').getContext('2d');
-    if (chartSlopePlateauInstance) chartSlopePlateauInstance.destroy();
+function renderSlopePlateauChart(cycleData, cutoffV, opts = {}) {
+    const canvasEl = document.getElementById(opts.canvasId || 'chartSlopePlateau');
+    if (!canvasEl) return;
+    const ctx = canvasEl.getContext('2d');
+    const prevInstance = opts.getInstance ? opts.getInstance() : chartSlopePlateauInstance;
+    if (prevInstance) prevInstance.destroy();
  
     const checkedDS = getCheckedDatasets();
     const isCompareMode = checkedDS.length >= 2;
@@ -330,7 +341,11 @@ function renderSlopePlateauChart(cycleData, cutoffV) {
         });
     } else {
         // ===== 단일 데이터셋: Slope/Plateau 영역 하이라이트 (lineColor 톤 유지) =====
-        if (!cycleData) { chartSlopePlateauInstance = null; return; }
+        if (!cycleData) {
+            if (opts.setInstance) opts.setInstance(null);
+            else chartSlopePlateauInstance = null;
+            return;
+        }
         
         const activeDs = datasetLibrary.find(d => d.id === activeDatasetId);
         const baseColor = activeDs ? activeDs.lineColor : '#60a5fa';
@@ -378,7 +393,7 @@ function renderSlopePlateauChart(cycleData, cutoffV) {
         ];
     }
  
-    chartSlopePlateauInstance = new Chart(ctx, {
+    const slopePlateauInstance = new Chart(ctx, {
         type: 'scatter',
         data: { datasets: chartDatasets },
         options: {
@@ -405,6 +420,9 @@ function renderSlopePlateauChart(cycleData, cutoffV) {
             }
         }
     });
+
+    if (opts.setInstance) opts.setInstance(slopePlateauInstance);
+    else chartSlopePlateauInstance = slopePlateauInstance;
 }
 /**
  * Hex 색상의 밝기를 조정합니다.
@@ -454,9 +472,14 @@ function hexToHsl(color) {
     }
     return { h: h * 360, s: s * 100, l: l * 100 };
 }
-function renderRateCapabilityCharts() {
-    const ctxCycles  = document.getElementById('chartRateCycles').getContext('2d');
-    const ctxSummary = document.getElementById('chartRateSummary').getContext('2d');
+function renderRateCapabilityCharts(opts = {}) {
+    // opts.cyclesCanvasId / opts.summaryCanvasId 및 각 인스턴스 get/set 콜백으로
+    // 독립 캔버스 렌더링 지원(통합 뷰 재사용). 미지정 시 기존 Rate 탭 동작을 유지합니다.
+    const cyclesCanvasEl  = document.getElementById(opts.cyclesCanvasId || 'chartRateCycles');
+    const summaryCanvasEl = document.getElementById(opts.summaryCanvasId || 'chartRateSummary');
+    if (!cyclesCanvasEl || !summaryCanvasEl) return;
+    const ctxCycles  = cyclesCanvasEl.getContext('2d');
+    const ctxSummary = summaryCanvasEl.getContext('2d');
  
     const checkedDS = getCheckedDatasets();
     const isCompareMode = checkedDS.length >= 2;
@@ -477,8 +500,10 @@ function renderRateCapabilityCharts() {
         'rgba(236, 72, 153, 0.85)'
     ];
  
-    if (chartRateCyclesInstance) chartRateCyclesInstance.destroy();
-    if (chartRateSummaryInstance) chartRateSummaryInstance.destroy();
+    const prevCyclesInstance  = opts.getCyclesInstance  ? opts.getCyclesInstance()  : chartRateCyclesInstance;
+    const prevSummaryInstance = opts.getSummaryInstance ? opts.getSummaryInstance() : chartRateSummaryInstance;
+    if (prevCyclesInstance) prevCyclesInstance.destroy();
+    if (prevSummaryInstance) prevSummaryInstance.destroy();
  
     // ========================
     // 1. Cycle-by-Cycle 용량 추이 선 차트
@@ -544,7 +569,7 @@ function renderRateCapabilityCharts() {
         datasetsForCycles.flatMap(ds => Object.keys(ds.processedCycles).map(Number))
     )].sort((a, b) => a - b);
  
-    chartRateCyclesInstance = new Chart(ctxCycles, {
+    const rateCyclesInstance = new Chart(ctxCycles, {
         type: 'line',
         data: { labels: allCycleNums, datasets: cycleLineDatasets },
         options: {
@@ -603,7 +628,7 @@ function renderRateCapabilityCharts() {
         }];
     }
  
-    chartRateSummaryInstance = new Chart(ctxSummary, {
+    const rateSummaryInstance = new Chart(ctxSummary, {
         type: 'bar',
         data: { labels: summaryLabels, datasets: summaryDatasets },
         options: {
@@ -625,7 +650,15 @@ function renderRateCapabilityCharts() {
             }
         }
     });
+
+    if (opts.setCyclesInstance) opts.setCyclesInstance(rateCyclesInstance);
+    else chartRateCyclesInstance = rateCyclesInstance;
+    if (opts.setSummaryInstance) opts.setSummaryInstance(rateSummaryInstance);
+    else chartRateSummaryInstance = rateSummaryInstance;
 }
+
+/**
+ * 특정 processedCycles 데이터를 기반으로 율속 요약을 빌드하는 보조 함수
 
 /**
  * 특정 processedCycles 데이터를 기반으로 율속 요약을 빌드하는 보조 함수

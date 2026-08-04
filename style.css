@@ -1937,24 +1937,27 @@ select option {
 
 .combined-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 16px;
     align-items: stretch;
 }
 
-/* 통합 뷰 카드 내부 차트 높이 (개별 탭보다 약간 낮게) */
-.combined-card .chart-container { height: 340px; }
+/* 통합 뷰 카드는 개별 탭보다 컴팩트하게 (패딩 축소) */
+.combined-card { padding: 14px; }
+
+/* 통합 뷰 카드 내부 차트 높이 (한눈에 보기 좋게 축소) */
+.combined-card .chart-container { height: 240px; }
 
 /* Rate Capability 카드: 두 하위 차트를 나란히 배치 */
 .combined-rate-subgrid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: 12px;
     flex: 1;
     min-width: 0;
 }
 
-.combined-rate-subgrid .chart-container { height: 300px; }
+.combined-rate-subgrid .chart-container { height: 220px; }
 
 @media (max-width: 720px) {
     .combined-grid { grid-template-columns: 1fr; }

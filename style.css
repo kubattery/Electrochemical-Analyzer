@@ -1959,7 +1959,12 @@ select option {
 
 .combined-rate-subgrid .chart-container { height: 220px; }
 
+/* Rate Capability 카드만 가로로 2칸 차지 (두 하위 차트가 넉넉히 보이도록) */
+.combined-card[data-chart="rate"] { grid-column: span 2; }
+
 @media (max-width: 720px) {
     .combined-grid { grid-template-columns: 1fr; }
     .combined-rate-subgrid { grid-template-columns: 1fr; }
+    /* 좁은 화면에서는 다시 한 칸으로 (넘침 방지) */
+    .combined-card[data-chart="rate"] { grid-column: auto; }
 }

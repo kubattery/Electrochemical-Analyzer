@@ -1,292 +1,687 @@
-/* ============================================================================
- * HC-Analyzer  ·  06-demo-update.js
- * 역할: 데모 데이터 생성 · 데이터 업데이트/실패 시뮬레이션
- *
- * [주의] 클래식 스크립트 방식입니다. 모든 모듈이 하나의 전역(window) 스코프를
- *        공유하므로 index.html에 명시된 <script> 로딩 순서를 반드시 유지하세요.
- *        로딩 순서: 06/15  (이전: js/05-dataset-helpers.js → 다음: js/07-projects.js)
- * ============================================================================ */
-/**
- * 데모용 Mock 데이터 생성기
- */
-function generateDemoDatasets() {
-    const demoDatasets = [];
-    const baseTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-    
-    // 1. Rate 데이터셋
-    const dsRate = {
-        id: "demo_rate_" + Date.now(),
-        projectName: activeProjectId,
-        experimentType: "rate",
-        dataName: "Demo_Rate_Test",
-        customName: "Demo_Rate_Test",
-        sampleName: "Demo_Hard_Carbon",
-        filename: "demo_rate.csv",
-        uploadedAt: baseTime,
-        lastConvertedAt: baseTime,
-        conversionStatus: "converted",
-        keyMetric: "ICE: 82.5%",
-        totalCycles: 40,
-        ice: "82.5",
-        compareEnabled: true,
-        isDemo: true,
-        mass: 2.5,
-        processedCycles: {
-            1: {
-                sodiation: [
-                    { voltage: 1.2, capacity: 0, current: -0.1 },
-                    { voltage: 0.5, capacity: 150, current: -0.1 },
-                    { voltage: 0.01, capacity: 300, current: -0.1 }
-                ],
-                desodiation: [
-                    { voltage: 0.01, capacity: 0, current: 0.1 },
-                    { voltage: 0.2, capacity: 120, current: 0.1 },
-                    { voltage: 1.5, capacity: 250, current: 0.1 }
-                ],
-                totalDischargeCap: 300,
-                totalChargeCap: 250
-            }
-        }
-    };
-    normalizeDataset(dsRate);
-    demoDatasets.push(dsRate);
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            alert("자바스크립트 런타임 오류 발생!\n메시지: " + message + "\n파일: " + source + "\n라인: " + lineno + "\n컬럼: " + colno);
+            return false;
+        };
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESMPL Analyzer</title>
+    <!-- Google Fonts & Material Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <!-- Chart.js CDN & SheetJS (Excel Parser) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css?v=2.9.0">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="material-icons-round brand-icon">battery_charging_full</span>
+                <div class="brand-title">
+                    <h1>ESMPL Analyzer</h1>
+                    <span class="version-tag">v1.0.0 (MVP)</span>
+                </div>
+            </div>
+            
+            <p class="sidebar-subtitle">이차전지 소재 전기화학 데이터 분석 시스템</p>
 
-    // 2. Cycle performance 데이터셋
-    const dsCycle = {
-        id: "demo_cycle_" + (Date.now() + 1),
-        projectName: activeProjectId,
-        experimentType: "cycle_performance",
-        dataName: "Demo_Long_Cycle",
-        customName: "Demo_Long_Cycle",
-        sampleName: "Demo_Hard_Carbon",
-        filename: "demo_cycle.xlsx",
-        uploadedAt: baseTime,
-        lastConvertedAt: baseTime,
-        conversionStatus: "converted",
-        keyMetric: "Retention: 92%",
-        totalCycles: 100,
-        ice: "80.1",
-        compareEnabled: true,
-        isDemo: true,
-        mass: 2.5,
-        processedCycles: {
-            1: {
-                sodiation: [
-                    { voltage: 1.2, capacity: 0, current: -0.1 },
-                    { voltage: 0.01, capacity: 280, current: -0.1 }
-                ],
-                desodiation: [
-                    { voltage: 0.01, capacity: 0, current: 0.1 },
-                    { voltage: 1.5, capacity: 220, current: 0.1 }
-                ],
-                totalDischargeCap: 280,
-                totalChargeCap: 220
-            }
-        }
-    };
-    normalizeDataset(dsCycle);
-    demoDatasets.push(dsCycle);
-
-    // 3. GITT 데이터셋
-    const dsGitt = {
-        id: "demo_gitt_" + (Date.now() + 2),
-        projectName: activeProjectId,
-        experimentType: "gitt",
-        dataName: "Demo_GITT_Diffusion",
-        customName: "Demo_GITT_Diffusion",
-        sampleName: "Demo_Hard_Carbon",
-        filename: "demo_gitt.txt",
-        uploadedAt: baseTime,
-        lastConvertedAt: baseTime,
-        conversionStatus: "converted",
-        keyMetric: "D_Na: ~10^-11 cm^2/s",
-        totalCycles: 1,
-        ice: "-",
-        compareEnabled: true,
-        isDemo: true,
-        mass: 2.5,
-        processedCycles: {
-            1: {
-                sodiation: [
-                    { voltage: 1.0, capacity: 50, current: -0.05 },
-                    { voltage: 0.1, capacity: 150, current: -0.05 }
-                ],
-                desodiation: [
-                    { voltage: 0.1, capacity: 50, current: 0.05 },
-                    { voltage: 1.0, capacity: 140, current: 0.05 }
-                ],
-                totalDischargeCap: 150,
-                totalChargeCap: 140
-            }
-        }
-    };
-    normalizeDataset(dsGitt);
-    demoDatasets.push(dsGitt);
-
-    // 4. CV 데이터셋
-    const dsCv = {
-        id: "demo_cv_" + (Date.now() + 3),
-        projectName: activeProjectId,
-        experimentType: "cv",
-        dataName: "Demo_CV_Scan",
-        customName: "Demo_CV_Scan",
-        sampleName: "Demo_Hard_Carbon_CV",
-        filename: "demo_cv.csv",
-        uploadedAt: baseTime,
-        lastConvertedAt: baseTime,
-        conversionStatus: "converted",
-        keyMetric: "Peak Curr: 1.2mA",
-        totalCycles: 5,
-        ice: "-",
-        compareEnabled: true,
-        isDemo: true,
-        mass: 2.5,
-        processedCycles: {
-            1: {
-                sodiation: [
-                    { voltage: 1.5, capacity: 10, current: -0.2 },
-                    { voltage: 0.01, capacity: 80, current: -0.2 }
-                ],
-                desodiation: [
-                    { voltage: 0.01, capacity: 10, current: 0.2 },
-                    { voltage: 1.5, capacity: 75, current: 0.2 }
-                ],
-                totalDischargeCap: 80,
-                totalChargeCap: 75
-            }
-        }
-    };
-    normalizeDataset(dsCv);
-    demoDatasets.push(dsCv);
-
-    return demoDatasets;
-}
-
-/**
- * 데모 모드 주입
- */
-function initDemoMode() {
-    const btn = document.getElementById('btnEnableDemoMode');
-    if (!btn) return;
-    
-    btn.addEventListener('click', async () => {
-        const demos = generateDemoDatasets();
-        for (const ds of demos) {
-            datasetLibrary.push(ds);
-            await saveDatasetToDB(ds);
-        }
-        
-        renderDatasetLibraryUI();
-        renderLibraryTable();
-        
-        // 첫 번째 데모 데이터를 활성화
-        switchActiveDataset(demos[0].id);
-        alert("데모 데이터셋 4개가 주입되었습니다 (isDemo: true).");
-    });
-}
-
-/**
- * 데이터 업데이트 Mock 천이 제어
- */
-function initDataUpdate() {
-    const btnUpdate = document.getElementById('btnUpdateData');
-    const btnFail = document.getElementById('btnSimulateFailure');
-    
-    if (btnUpdate) {
-        btnUpdate.addEventListener('click', () => {
-            simulateUpdateFlow(false);
-        });
-    }
-    if (btnFail) {
-        btnFail.addEventListener('click', () => {
-            simulateUpdateFlow(true);
-        });
-    }
-}
-
-function simulateUpdateFlow(isFailureSim) {
-    const statusText = document.getElementById('updateStatusText');
-    if (!statusText) return;
-
-    const states = [
-        { text: "raw_wrd 스캔 중", time: 1000 },
-        { text: isFailureSim ? "새 파일 발견 (에러 예정)" : "새 파일 3개 발견", time: 1200 },
-        { text: "변환 중", time: 1500 },
-        { text: "후처리 중", time: 1000 }
-    ];
-    
-    let currentIndex = 0;
-    
-    function nextState() {
-        if (currentIndex < states.length) {
-            statusText.textContent = states[currentIndex].text;
-            statusText.style.color = "var(--color-orange)";
-            setTimeout(() => {
-                currentIndex++;
-                nextState();
-            }, states[currentIndex].time);
-        } else {
-            // 최종 결과
-            if (isFailureSim) {
-                statusText.textContent = "실패";
-                statusText.style.color = "var(--color-danger)";
-            } else {
-                statusText.textContent = "완료";
-                statusText.style.color = "var(--color-success)";
+            <!-- File Update Card -->
+            <div class="sidebar-card upload-card" id="dataUpdateCard">
+                <h2 class="card-title"><span class="material-icons-round icon-align">sync</span> 데이터 업데이트</h2>
                 
-                // 업데이트 성공 시 mock으로 데이터셋 하나를 자동 추가하여 시각적 피드백 제공
-                addMockUpdatedDataset();
-            }
-        }
-    }
-    
-    // 시작
-    statusText.textContent = "scanning";
-    statusText.style.color = "var(--color-primary)";
-    setTimeout(nextState, 800);
-}
+                <!-- Project Selection & Management -->
+                <div class="project-config-group" style="margin-bottom: 12px;">
+                    <label style="font-size: 11px; color: var(--text-muted); font-weight: 500; display: block; margin-bottom: 6px;">프로젝트 선택</label>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <select id="projectSelect" class="select-field" style="margin-bottom: 0; flex: 1; height: 32px; font-size: 12px;"></select>
+                        <button id="btnAddProject" class="btn btn-secondary btn-icon" title="프로젝트 추가" style="height: 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                            <span class="material-icons-round" style="font-size: 16px;">add</span>
+                        </button>
+                        <button id="btnRenameProject" class="btn btn-secondary btn-icon" title="프로젝트 수정" style="height: 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                            <span class="material-icons-round" style="font-size: 16px;">edit</span>
+                        </button>
+                    </div>
+                </div>
 
-async function addMockUpdatedDataset() {
-    const baseTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-    const uniqueName = generateUniqueDataName("Auto_Updated_Dataset");
+                <!-- Update Buttons -->
+                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                    <button id="btnUpdateData" class="btn btn-primary" style="flex: 1; height: 32px; font-size: 12px; font-weight: 600; padding: 0 10px;">
+                        <span class="material-icons-round" style="font-size:16px; vertical-align:middle; margin-right:4px;">refresh</span>업데이트
+                    </button>
+                    <button id="btnSimulateFailure" class="btn btn-secondary" style="height: 32px; font-size: 11px; padding: 0 8px;" title="실패 시뮬레이션">
+                        실패 테스트
+                    </button>
+                </div>
+
+                <!-- Update Status Area -->
+                <div class="update-status-panel" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted);">
+                        <span>상태:</span>
+                        <span id="updateStatusText" style="font-weight: 600; color: var(--color-primary);">대기 중</span>
+                    </div>
+                </div>
+
+                <!-- 수동 업로드 모드 접이식 영역 -->
+                <details class="manual-upload-accordion" id="manualUploadAccordion" style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;">
+                    <summary style="font-size: 11px; color: var(--text-muted); font-weight: 600; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; outline: none; margin-bottom: 10px;">
+                        <span>🔧 수동 업로드 모드</span>
+                        <span class="material-icons-round" style="font-size: 14px;">expand_more</span>
+                    </summary>
+                    <div class="drop-zone" id="dropZone" style="margin-top: 6px;">
+                        <span class="material-icons-round drop-icon">cloud_upload</span>
+                        <p class="drop-text">CSV, TXT, Excel 파일을 드래그하거나 클릭하세요.</p>
+                        <p class="drop-text" style="font-size:10px; margin-top:4px; color:rgba(255,255,255,0.35);">여러 파일을 한 번에 선택할 수 있습니다</p>
+                    </div>
+                    <input type="file" id="fileInput" accept=".csv,.txt,.xlsx,.xls" multiple hidden>
+
+                    <!-- 율속 테스트 설정 패널 -->
+                    <div class="rate-config-panel" id="rateConfigPanel" style="margin-top: 10px; padding-top: 8px;">
+                        <p class="rate-config-title" style="font-size: 10px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px;">⚡ 율속 분석 설정</p>
+
+                        <!-- 단위 선택 (C-rate vs mA/g) -->
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 10px; color: var(--text-muted); font-weight: 500; display: block; margin-bottom: 4px;">측정 단위</label>
+                            <div class="rate-unit-toggle" id="rateUnitToggle" style="height: 24px;">
+                                <button class="rate-unit-btn active" data-unit="crate" id="btnUnitCrate" style="font-size: 9px; padding: 2px 6px;">C-rate</button>
+                                <button class="rate-unit-btn" data-unit="mag" id="btnUnitMag" style="font-size: 9px; padding: 2px 6px;">mA/g</button>
+                            </div>
+                        </div>
+
+                        <!-- 단계당 사이클 수 -->
+                        <div style="margin-bottom: 8px;">
+                            <label class="config-label" for="rateStepSize" style="margin-bottom: 4px; display: block; font-size: 10px; color: var(--text-muted); font-weight: 500;">단계당 사이클 수</label>
+                            <select id="rateStepSize" class="select-field" style="height: 26px; font-size: 10px; padding: 0 4px;">
+                                <option value="3">3 사이클</option>
+                                <option value="5" selected>5 사이클 (표준)</option>
+                                <option value="10">10 사이클</option>
+                            </select>
+                        </div>
+
+                        <!-- 단계 라벨 직접 입력 -->
+                        <div>
+                            <label class="config-label" for="rateStepsInput" style="margin-bottom: 4px; display: block; font-size: 10px; color: var(--text-muted); font-weight: 500;">
+                                <span id="rateStepsLabel">단계별 C-rate 값</span>
+                            </label>
+                            <input type="text" id="rateStepsInput" class="select-field"
+                                value="0.1, 0.2, 0.5, 1, 2, 5, 10, 0.1"
+                                placeholder="예: 0.1, 0.2, 0.5, 1, 2..."
+                                style="padding: 4px 6px; height: 26px; font-size: 10px;">
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+
+            
+            <!-- 데이터 라이브러리 패널 -->
+            <div class="sidebar-card library-card" id="datasetLibraryCard">
+                <div class="library-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 class="card-title" style="margin: 0; display: inline-flex; align-items: center; gap: 4px;">
+                        <span class="material-icons-round icon-align">dataset</span>
+                        데이터 라이브러리
+                    </h2>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <span class="library-count-badge" id="libraryCountBadge">0</span>
+                    </div>
+                </div>
+                
+                <!-- 요약 정보 영역 -->
+                <div class="library-summary-panel" style="font-size: 10px; color: var(--text-muted); background: rgba(0,0,0,0.12); border-radius: 4px; padding: 6px 8px; margin: 8px 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;">
+                    <div>전체: <span id="summaryTotal" style="color: #fff; font-weight: 600;">0</span></div>
+                    <div>완료: <span id="summaryCompleted" style="color: var(--color-success); font-weight: 600;">0</span></div>
+                    <div>실패: <span id="summaryFailed" style="color: var(--color-danger); font-weight: 600;">0</span></div>
+                    <div>업데이트 필요: <span id="summaryNeedUpdate" style="color: var(--color-orange); font-weight: 600;">0</span></div>
+                    <div style="grid-column: span 2; font-size: 9px; border-top: 1px solid rgba(255,255,255,0.04); padding-top: 4px; margin-top: 2px;">
+                        마지막 업데이트: <span id="summaryLastTime">-</span>
+                    </div>
+                </div>
+                <!-- 필터 칩 영역 -->
+                <div class="library-filter-chips" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px;">
+                    <button class="chip active" data-filter="all" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">전체</button>
+                    <button class="chip" data-filter="rate" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">Rate</button>
+                    <button class="chip" data-filter="cycle_performance" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">Cycle</button>
+                    <button class="chip" data-filter="gitt" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">GITT</button>
+                    <button class="chip" data-filter="cv" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">CV</button>
+                    <button class="chip" data-filter="failed" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--color-danger); background: transparent; border-radius: 4px; color: var(--color-danger); cursor: pointer;">실패</button>
+                </div>
+
+                <div class="dataset-list" id="datasetList">
+                    <p class="library-empty-msg">업로드한 데이터가 여기에 저장됩니다.</p>
+                </div>
+            </div>
+            <div class="sidebar-footer">
+                <p>&copy; 2026 Antigravity. 이차전지 소재 데이터 분석 툴.</p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Navbar / Info Header -->
+            <header class="main-header">
+                <div class="header-info">
+                    <span class="badge badge-success">READY</span>
+                    <h2 class="active-filename" id="activeFilename">분석할 데이터를 업로드해 주세요</h2>
+                </div>
+                <div class="header-tabs">
+                    <button class="tab-btn" data-tab="tab-library" id="btnTabLibrary">
+                        <span class="material-icons-round">folder_open</span> 데이터 라이브러리
+                    </button>
+                    <button class="tab-btn active" data-tab="tab-overview">
+                        <span class="material-icons-round">dashboard</span> 개요 & ICE
+                    </button>
+                    <button class="tab-btn" data-tab="tab-slope-plateau">
+                        <span class="material-icons-round">show_chart</span> Slope / Plateau
+                    </button>
+                    <button class="tab-btn" data-tab="tab-rate">
+                        <span class="material-icons-round">speed</span> Rate Capability
+                    </button>
+                    <button class="tab-btn" data-tab="tab-dqdv">
+                        <span class="material-icons-round">waves</span> dQ/dV 분석
+                    </button>
+                    <button class="tab-btn tab-btn-coming-soon" id="btnGittComingSoon">
+                        <span class="material-icons-round">bolt</span> GITT 분석
+                        <span class="coming-soon-badge">SOON</span>
+                    </button>
+                    <button class="tab-btn" data-tab="tab-combined">
+                        <span class="material-icons-round">grid_view</span> 데이터 한눈에 보기
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Content Panels -->
+            <div class="content-body">
+                <div id="welcomeView" style="display: none;"></div>
+
+                <!-- Tab 0: Data Library -->
+                <div class="tab-panel" id="tab-library">
+                    <div class="library-tab-container" style="display: flex; flex-direction: column; gap: 16px; height: 100%;">
+                        <!-- 검색 및 필터 헤더 -->
+                        <div class="library-tab-filter-bar" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px; position: relative;">
+                                <span class="material-icons-round" style="position: absolute; left: 10px; top: 8px; color: var(--text-muted); font-size: 18px;">search</span>
+                                <input type="text" id="libTabSearch" class="select-field" placeholder="데이터명, 샘플명, 원본 파일명 검색..." style="padding-left: 34px; margin-bottom: 0; width: 100%; height: 34px; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <select id="libTabProjectFilter" class="select-field" style="margin-bottom: 0; height: 34px; width: 140px; box-sizing: border-box;"></select>
+                            </div>
+                            <div>
+                                <select id="libTabTypeFilter" class="select-field" style="margin-bottom: 0; height: 34px; width: 140px; box-sizing: border-box;">
+                                    <option value="all">모든 실험 타입</option>
+                                    <option value="rate">Rate</option>
+                                    <option value="cycle_performance">Cycle performance</option>
+                                    <option value="gitt">GITT</option>
+                                    <option value="cv">CV</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select id="libTabStatusFilter" class="select-field" style="margin-bottom: 0; height: 34px; width: 120px; box-sizing: border-box;">
+                                    <option value="all">모든 상태</option>
+                                    <option value="converted">완료</option>
+                                    <option value="failed">실패</option>
+                                    <option value="pending">대기 중</option>
+                                    <option value="converting">변환 중</option>
+                                    <option value="updated">업데이트됨</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select id="libTabSort" class="select-field" style="margin-bottom: 0; height: 34px; width: 120px; box-sizing: border-box;">
+                                    <option value="newest">최신순 정렬</option>
+                                    <option value="name">이름순 정렬</option>
+                                    <option value="type">타입순 정렬</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 전체 데이터 테이블 카드 -->
+                        <div class="dashboard-chart-card" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+                            <div class="card-header" style="border-bottom: 1px solid var(--border-color); padding: 12px 16px;">
+                                <h3 class="chart-title" style="margin:0;">종합 데이터 리스트</h3>
+                            </div>
+                            <div style="flex: 1; overflow-y: auto;">
+                                <table class="lib-data-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12px;">
+                                    <thead style="background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 10;">
+                                        <tr>
+                                            <th style="padding: 12px 16px; color: var(--text-muted); width: 60px;">표시</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Data Name</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Sample</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Project</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Experiment Type</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Status</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Key Metric</th>
+                                            <th style="padding: 12px 16px; color: var(--text-muted);">Updated</th>
+                                            <th style="padding: 12px 16px; text-align: right; color: var(--text-muted);">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="libTableBody">
+                                        <!-- JS 동적 생성 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 1: Overview & ICE -->
+                <div class="tab-panel active" id="tab-overview">
+                    <div class="chart-layout-grid single-chart">
+                        <div class="dashboard-chart-card">
+                            <div class="card-header">
+                                <h3 class="chart-title">전압 프로파일 (Voltage Profile)</h3>
+                                <div class="header-controls">
+                                    <!-- 기존 targetCycle 셀렉터는 호환성을 위해 display:none 상태로 남겨둠 -->
+                                    <select id="targetCycle" style="display: none;">
+                                        <option value="1">1 Cycle</option>
+                                    </select>
+                                    <div class="control-item profile-dropdown-container">
+                                        <label style="font-weight: 600; font-size: 11px; color: var(--text-muted);">분석 사이클:</label>
+                                        <button class="inline-select dropdown-toggle-btn" id="btnProfileCycleDropdown" style="display: inline-flex; align-items: center; gap: 8px;">
+                                            <span id="profileCycleSummary">전체 사이클</span>
+                                            <span class="material-icons-round dropdown-arrow-icon" style="font-size: 16px;">arrow_drop_down</span>
+                                        </button>
+                                        
+                                        <!-- 드롭다운 팝오버 패널 -->
+                                        <div class="profile-dropdown-panel" id="profileCycleDropdownPanel">
+                                            <div class="dropdown-header-row">
+                                                <span class="panel-title">사이클 다중 선택</span>
+                                                <div class="cycle-quick-actions" id="profileCycleQuickActions">
+                                                    <button class="btn btn-secondary btn-xs" id="btnProfileCycleAll">전체</button>
+                                                    <button class="btn btn-secondary btn-xs" id="btnProfileCycleClear">해제</button>
+                                                    <button class="btn btn-secondary btn-xs" id="btnProfileCycleOdd">홀수</button>
+                                                    <button class="btn btn-secondary btn-xs" id="btnProfileCycleEven">짝수</button>
+                                                </div>
+                                            </div>
+                                            <div class="cycle-chips-container drag-select-zone" id="profileCycleChipsContainer">
+                                                <!-- JS 동적 생성 영역 -->
+                                            </div>
+                                            <div class="dropdown-footer-tip">
+                                                * Shift+클릭: 범위 선택 | 드래그: 연속 선택/해제
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="control-item">
+                                        <label for="targetDirectionProfile">표시 방향:</label>
+                                        <select id="targetDirectionProfile" class="select-field inline-select">
+                                            <option value="all" selected>전체 표시</option>
+                                            <option value="discharge">방전만</option>
+                                            <option value="charge">충전만</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn-icon" title="차트 이미지 다운로드" id="btnDownloadProfile"><span class="material-icons-round">image</span></button>
+                                    <button class="btn-icon" title="현재 표시 데이터 엑셀 다운로드" id="btnDownloadProfileExcel"><span class="material-icons-round">table_view</span></button>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartProfile"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- 초기 용량 및 ICE 정량 비교 요약 테이블 -->
+                        <div class="dashboard-chart-card table-card" style="margin-top: 10px;">
+                            <div class="card-header">
+                                <h3 class="chart-title">초기 전기화학 특성 비교 요약 (Initial Capacity & ICE)</h3>
+                            </div>
+                            <div class="table-container">
+                                <table class="academic-table" id="tableOverviewMetrics">
+                                    <thead>
+                                        <tr>
+                                            <th>데이터셋</th>
+                                            <th>초기 방전 용량 (Discharge, mAh/g)</th>
+                                            <th>초기 충전 용량 (Charge, mAh/g)</th>
+                                            <th>초기 가역 효율 (ICE, %)</th>
+                                            <th>분석 코멘트</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="5" style="text-align: center; color: var(--text-muted);">데이터가 없습니다. CSV를 업로드해 주십시오.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Slope / Plateau Analysis -->
+                <div class="tab-panel" id="tab-slope-plateau">
+                    <div class="chart-layout-grid single-chart">
+                        <!-- Chart Area -->
+                        <div class="dashboard-chart-card">
+                            <div class="card-header">
+                                <h3 class="chart-title">Slope / Plateau 영역 하이라이트</h3>
+                                <div class="header-controls">
+                                    <div class="control-item">
+                                        <label for="targetCycleSP">분석 사이클:</label>
+                                        <select id="targetCycleSP" class="select-field inline-select">
+                                            <option value="1">1 Cycle</option>
+                                        </select>
+                                    </div>
+                                    <div class="control-item slider-item">
+                                        <label for="cutoffVoltage">Plateau 분리 전압:</label>
+                                        <input type="range" id="cutoffVoltage" min="0.02" max="0.30" step="0.01" value="0.10" class="range-slider inline-slider">
+                                        <span class="value-display" id="cutoffValDisplay">0.10 V</span>
+                                    </div>
+                                    <button class="btn-icon" title="차트 이미지 저장" id="btnDownloadSlopeChart"><span class="material-icons-round">photo_camera</span></button>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartSlopePlateau"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Slope / Plateau 정량 분석 비교 요약 테이블 -->
+                        <div class="dashboard-chart-card table-card" style="margin-top: 10px;">
+                            <div class="card-header">
+                                <h3 class="chart-title">Slope / Plateau 정량 분석 비교 요약</h3>
+                            </div>
+                            <div class="table-container">
+                                <table class="academic-table" id="tableSlopePlateauMetrics">
+                                    <thead>
+                                        <tr>
+                                            <th>데이터셋</th>
+                                            <th>분석 사이클</th>
+                                            <th>Slope 영역 용량 (mAh/g)</th>
+                                            <th>Slope 분율 (%)</th>
+                                            <th>Plateau 영역 용량 (mAh/g)</th>
+                                            <th>Plateau 분율 (%)</th>
+                                            <th>총 방전 용량 (mAh/g)</th>
+                                            <th>분석 코멘트</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="8" style="text-align: center; color: var(--text-muted);">데이터가 없습니다. CSV를 업로드해 주십시오.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="card-footer-note">
+                                <span class="material-icons-round">info</span> 
+                                일반적으로 탄화 온도가 높아질수록 Plateau 영역의 기공 내 Na 클러스터링 용량이 지배적으로 증가하며, Slope 영역은 감소하는 경향을 보입니다.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Rate Capability -->
+                <div class="tab-panel" id="tab-rate">
+                    <div class="chart-layout-grid two-columns">
+                        <!-- Rate capacity line chart over cycles -->
+                        <div class="dashboard-chart-card">
+                            <div class="card-header">
+                                <h3 class="chart-title" id="rateCyclesChartTitle">사이클 경과에 따른 C-rate별 충전 용량</h3>
+                                <div class="header-controls">
+                                    <div class="control-item">
+                                        <label for="selectRateMode">율속 기준:</label>
+                                        <select id="selectRateMode" class="select-field inline-select">
+                                            <option value="charge" selected>충전 용량 기준 (Charge)</option>
+                                            <option value="discharge">방전 용량 기준 (Discharge)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartRateCycles"></canvas>
+                            </div>
+                        </div>
+ 
+                        <!-- Rate retention summary bar chart -->
+                        <div class="dashboard-chart-card">
+                            <div class="card-header">
+                                <h3 class="chart-title" id="rateSummaryChartTitle">C-rate별 용량 유지율 (0.1C 기준)</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartRateSummary"></canvas>
+                            </div>
+                        </div>
+                    </div>
+ 
+                    <!-- Rate Summary Table -->
+                    <div class="dashboard-chart-card table-card">
+                        <div class="card-header">
+                            <h3 class="chart-title">C-rate 율속 데이터 요약</h3>
+                            <div class="header-controls" style="display: flex; gap: 8px;">
+                                <button class="btn btn-secondary btn-sm" id="btnDownloadRateData">
+                                    <span class="material-icons-round">download</span> 요약 엑셀 내보내기
+                                </button>
+                                <button class="btn btn-secondary btn-sm" id="btnDownloadRateDetailData">
+                                    <span class="material-icons-round">download</span> 상세 엑셀 내보내기
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table class="academic-table" id="tableRateSummary">
+                                <thead>
+                                    <!-- 자바스크립트에서 동적으로 헤더 컬럼 빌드 -->
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style="text-align: center; color: var(--text-muted);">데이터가 없습니다. CSV를 업로드해 주십시오.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: dQ/dV Analysis -->
+                <div class="tab-panel" id="tab-dqdv">
+                    <div class="chart-layout-grid single-chart">
+                        <!-- Chart Area -->
+                        <div class="dashboard-chart-card">
+                            <div class="card-header">
+                                <h3 class="chart-title">dQ/dV 미분 용량 곡선</h3>
+                                <div class="header-controls">
+                                    <!-- 기존 targetCycleDqDv 셀렉터는 호환성을 위해 display:none 상태로 남겨둠 -->
+                                    <select id="targetCycleDqDv" style="display: none;">
+                                        <option value="1">1 Cycle</option>
+                                    </select>
+                                    <div class="control-item dqdv-dropdown-container">
+                                        <label style="font-weight: 600; font-size: 11px; color: var(--text-muted); white-space: nowrap;">분석 사이클:</label>
+                                        <button class="inline-select dropdown-toggle-btn" id="btnDqDvCycleDropdown">
+                                            <span id="dqdvCycleSummary">1 Cycle</span>
+                                            <span class="material-icons-round dropdown-arrow-icon">arrow_drop_down</span>
+                                        </button>
+                                        <div class="dqdv-dropdown-panel" id="dqdvCycleDropdownPanel">
+                                            <div class="dropdown-header-row">
+                                                <span class="panel-title">dQ/dV 사이클 선택</span>
+                                                <div class="cycle-quick-actions" id="cycleQuickActions">
+                                                    <button class="btn btn-secondary btn-xs" id="btnCycleAll">전체</button>
+                                                    <button class="btn btn-secondary btn-xs" id="btnCycleClear">해제</button>
+                                                    <button class="btn btn-secondary btn-xs" id="btnCycleOdd">홀수</button>
+                                                    <button class="btn btn-secondary btn-xs" id="btnCycleEven">짝수</button>
+                                                </div>
+                                            </div>
+                                            <div class="cycle-chips-container dqdv-cycle-list" id="cycleChipsContainer">
+                                                <!-- JS 동적 생성 영역 -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="control-item">
+                                        <label for="selectDqDvMode">충방전 모드:</label>
+                                        <select id="selectDqDvMode" class="select-field inline-select">
+                                            <option value="both" selected>충방전 전체 (Both)</option>
+                                            <option value="charge">충전만 (Charge)</option>
+                                            <option value="discharge">방전만 (Discharge)</option>
+                                        </select>
+                                    </div>
+                                    <div class="control-item slider-item" style="min-width: 150px;">
+                                        <label for="dqdvStepV">dV [V]:</label>
+                                        <input type="range" id="dqdvStepV" min="0.001" max="0.030" step="0.001" value="0.010" class="range-slider inline-slider">
+                                        <span class="value-display" id="dqdvStepVVal">10 mV</span>
+                                    </div>
+                                    <div class="control-item">
+                                        <label for="dqdvQo">Qo [mAh]:</label>
+                                        <input type="number" id="dqdvQo" class="select-field inline-select" style="width: 70px; padding: 4px;" value="1000">
+                                    </div>
+                                    <div class="control-item">
+                                        <label for="dqdvMass">Mass [mg]:</label>
+                                        <input type="number" id="dqdvMass" class="select-field inline-select" style="width: 70px; padding: 4px;" value="2.58" step="0.01">
+                                    </div>
+                                    <div class="control-item" style="min-width: 130px;">
+                                        <label for="dqdvPostAvg">Post-Avg. Factor:</label>
+                                        <input type="number" id="dqdvPostAvg" class="select-field inline-select" style="width: 50px; padding: 4px;" value="1" min="1" max="30">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chartDqDv"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- dQ/dV 주요 산화환원 피크 요약 테이블 -->
+                        <div class="dashboard-chart-card table-card" style="margin-top: 10px;">
+                            <div class="card-header">
+                                <h3 class="chart-title">주요 산화환원 피크 요약</h3>
+                            </div>
+                            <div class="table-container">
+                                <table class="academic-table" id="tableDqDvPeaks">
+                                    <thead>
+                                        <tr>
+                                            <th>데이터셋</th>
+                                            <th>사이클</th>
+                                            <th>환원 피크 전압 (V)</th>
+                                            <th>환원 피크 dQ/dV (1/V)</th>
+                                            <th>산화 피크 전압 (V)</th>
+                                            <th>산화 피크 dQ/dV (1/V)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="6" style="text-align: center; color: var(--text-muted);">데이터가 없습니다. CSV를 업로드해 주십시오.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Tab 5: 데이터 한눈에 보기 (통합 뷰) -->
+                <div class="tab-panel" id="tab-combined">
+                    <div class="combined-toolbar">
+                        <span class="combined-toolbar-title">
+                            <span class="material-icons-round">grid_view</span> 표시할 그래프 선택
+                        </span>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="profile" checked>
+                            <span>Voltage Profile</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="slope" checked>
+                            <span>Slope / Plateau</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="dqdv" checked>
+                            <span>dQ/dV</span>
+                        </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="rate" checked>
+                            <span>Rate Capability</span>
+                        </label>
+                    </div>
+
+                    <p class="combined-empty-msg" id="combinedEmptyMsg" style="display: none;"></p>
+
+                    <div class="combined-grid" id="combinedChartGrid">
+                        <!-- Voltage Profile -->
+                        <div class="dashboard-chart-card combined-card" data-chart="profile">
+                            <div class="card-header">
+                                <h3 class="chart-title">전압 프로파일 (Voltage Profile)</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartProfile"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Slope / Plateau -->
+                        <div class="dashboard-chart-card combined-card" data-chart="slope">
+                            <div class="card-header">
+                                <h3 class="chart-title">Slope / Plateau 영역 하이라이트</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartSlope"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- dQ/dV -->
+                        <div class="dashboard-chart-card combined-card" data-chart="dqdv">
+                            <div class="card-header">
+                                <h3 class="chart-title">dQ/dV 미분 용량 곡선</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartDqDv"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Rate Capability (두 개의 하위 차트) — 폭이 넓어 맨 뒤에 배치 -->
+                        <div class="dashboard-chart-card combined-card" data-chart="rate">
+                            <div class="card-header">
+                                <h3 class="chart-title">Rate Capability</h3>
+                            </div>
+                            <div class="combined-rate-subgrid">
+                                <div class="chart-container">
+                                    <canvas id="combinedChartRateCycles"></canvas>
+                                </div>
+                                <div class="chart-container">
+                                    <canvas id="combinedChartRateSummary"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
     
-    const newDs = {
-        id: "mock_update_" + Date.now(),
-        projectName: activeProjectId,
-        experimentType: "rate",
-        dataName: uniqueName,
-        customName: uniqueName,
-        sampleName: "Updated_Sample",
-        filename: "auto_convert_" + Date.now() + ".wrd",
-        uploadedAt: baseTime,
-        lastConvertedAt: baseTime,
-        conversionStatus: "updated",
-        keyMetric: "ICE: 84.1%",
-        totalCycles: 5,
-        ice: "84.1",
-        compareEnabled: true,
-        mass: 2.58,
-        processedCycles: {
-            1: {
-                sodiation: [
-                    { voltage: 1.0, capacity: 0, current: -0.1 },
-                    { voltage: 0.01, capacity: 200, current: -0.1 }
-                ],
-                desodiation: [
-                    { voltage: 0.01, capacity: 0, current: 0.1 },
-                    { voltage: 1.5, capacity: 168, current: 0.1 }
-                ],
-                totalDischargeCap: 200,
-                totalChargeCap: 168
-            }
-        }
-    };
-    
-    normalizeDataset(newDs);
-    datasetLibrary.push(newDs);
-    await saveDatasetToDB(newDs);
-    
-    renderDatasetLibraryUI();
-    switchActiveDataset(newDs.id);
-    renderLibraryTable();
-}
+    <!-- 데이터명 입력 모달 (다중 파일 지원) -->
+    <div class="modal-overlay" id="datasetNameModal" style="display:none;">
+        <div class="modal-box" style="max-width: 520px; width: 92%;">
+            <div class="modal-header">
+                <span class="material-icons-round" style="color: var(--color-primary);">save</span>
+                <h3 id="modalTitle">데이터셋 저장</h3>
+            </div>
+            <p class="modal-desc" id="modalDesc">업로드된 파일을 라이브러리에 저장합니다.<br>구분하기 쉽도록 이름을 입력하세요.</p>
+
+            <!-- 다중 파일 이름 목록 (JS가 동적으로 채워줌) -->
+            <div id="multiFileNameList" style="display:flex; flex-direction:column; gap:10px; max-height:320px; overflow-y:auto; margin-bottom:16px;"></div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="btnModalSkip">건너뛰기 (파일명 사용)</button>
+                <button class="btn btn-primary" id="btnModalSave">
+                    <span class="material-icons-round" style="font-size:16px;">save</span> 저장하기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         기능별 분리 모듈 (클래식 스크립트) — 로딩 순서 반드시 유지
+         전역(window) 스코프를 공유하므로 순서를 바꾸면 동작이 깨질 수 있습니다.
+         ============================================================ -->
+    <script src="js/01-core.js?v=3.0.0"></script>
+    <script src="js/02-file-upload.js?v=5.0.0"></script>
+    <script src="js/03-analysis-controls.js?v=3.0.0"></script>
+    <script src="js/04-database.js?v=3.0.0"></script>
+    <script src="js/05-dataset-helpers.js?v=3.0.0"></script>
+    <script src="js/06-demo-update.js?v=3.0.0"></script>
+    <script src="js/07-projects.js?v=3.0.0"></script>
+    <script src="js/08-library-table.js?v=3.0.0"></script>
+    <script src="js/09-dataset-library.js?v=3.0.0"></script>
+    <script src="js/10-data-processing.js?v=4.0.0"></script>
+    <script src="js/11-analysis-metrics.js?v=3.0.0"></script>
+    <script src="js/12-dqdv.js?v=3.0.0"></script>
+    <script src="js/13-charts.js?v=3.0.0"></script>
+    <script src="js/14-export.js?v=3.0.0"></script>
+    <script src="js/15-profile-cycles.js?v=3.0.0"></script>
+    <script src="js/16-combined-view.js?v=1.0.0"></script>
+</body>
+</html>

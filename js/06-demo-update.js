@@ -260,3 +260,33 @@ async function addMockUpdatedDataset() {
         filename: "auto_convert_" + Date.now() + ".wrd",
         uploadedAt: baseTime,
         lastConvertedAt: baseTime,
+        conversionStatus: "updated",
+        keyMetric: "ICE: 84.1%",
+        totalCycles: 5,
+        ice: "84.1",
+        compareEnabled: true,
+        mass: 2.58,
+        processedCycles: {
+            1: {
+                sodiation: [
+                    { voltage: 1.0, capacity: 0, current: -0.1 },
+                    { voltage: 0.01, capacity: 200, current: -0.1 }
+                ],
+                desodiation: [
+                    { voltage: 0.01, capacity: 0, current: 0.1 },
+                    { voltage: 1.5, capacity: 168, current: 0.1 }
+                ],
+                totalDischargeCap: 200,
+                totalChargeCap: 168
+            }
+        }
+    };
+    
+    normalizeDataset(newDs);
+    datasetLibrary.push(newDs);
+    await saveDatasetToDB(newDs);
+    
+    renderDatasetLibraryUI();
+    switchActiveDataset(newDs.id);
+    renderLibraryTable();
+}

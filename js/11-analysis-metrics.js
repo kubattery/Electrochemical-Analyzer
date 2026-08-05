@@ -77,13 +77,13 @@ function updateOverviewMetricsTable() {
         let iceDesc = "";
         let iceColor = "";
         if (ice >= 85) {
-            iceDesc = "우수한 초기 효율 (Top-tier SIB 수준)";
+            iceDesc = "우수한 초기 효율 (상위권 수준)";
             iceColor = "var(--color-success)";
         } else if (ice >= 75) {
-            iceDesc = "보통 효율 (SEI 제어 보완 필요)";
+            iceDesc = "보통 효율 (계면 안정화 보완 필요)";
             iceColor = "var(--color-orange)";
         } else {
-            iceDesc = "낮은 효율 (SEI 손실 발생 의심)";
+            iceDesc = "낮은 효율 (초기 비가역 손실 의심)";
             iceColor = "var(--color-danger)";
         }
 
@@ -379,4 +379,3 @@ function calculateRateCapability() {
 
     tbody.innerHTML = bodyHTML;
 }
-

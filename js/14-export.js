@@ -147,9 +147,9 @@ function getProfileExportHeaders(direction) {
             "Cycle", 
             "Point Index", 
             "Discharge Capacity (mAh/g)", 
-            "Discharge Voltage (V vs. Na/Na+)", 
+            "Discharge Voltage (V)", 
             "Charge Capacity (mAh/g)", 
-            "Charge Voltage (V vs. Na/Na+)"
+            "Charge Voltage (V)"
         ];
     } else if (direction === 'discharge') {
         return [
@@ -157,7 +157,7 @@ function getProfileExportHeaders(direction) {
             "Cycle", 
             "Point Index", 
             "Discharge Capacity (mAh/g)", 
-            "Discharge Voltage (V vs. Na/Na+)"
+            "Discharge Voltage (V)"
         ];
     } else {
         return [
@@ -165,7 +165,7 @@ function getProfileExportHeaders(direction) {
             "Cycle", 
             "Point Index", 
             "Charge Capacity (mAh/g)", 
-            "Charge Voltage (V vs. Na/Na+)"
+            "Charge Voltage (V)"
         ];
     }
 }
@@ -361,6 +361,3 @@ async function exportVoltageProfileDataToExcel() {
         btnDownloadProfileExcel.innerHTML = originalContent;
     }
 }
-
-
-

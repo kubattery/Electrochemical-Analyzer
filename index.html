@@ -9,7 +9,7 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hard Carbon Electrochemical Analyzer</title>
+    <title>ESMPL Analyzer</title>
     <!-- Google Fonts & Material Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,12 +27,12 @@
             <div class="sidebar-header">
                 <span class="material-icons-round brand-icon">battery_charging_full</span>
                 <div class="brand-title">
-                    <h1>HC-Analyzer</h1>
+                    <h1>ESMPL Analyzer</h1>
                     <span class="version-tag">v1.0.0 (MVP)</span>
                 </div>
             </div>
             
-            <p class="sidebar-subtitle">배터리 논문 투고용 전기화학 데이터 정제 시스템</p>
+            <p class="sidebar-subtitle">이차전지 소재 전기화학 데이터 분석 시스템</p>
 
             <!-- File Update Card -->
             <div class="sidebar-card upload-card" id="dataUpdateCard">
@@ -160,7 +160,7 @@
                 </div>
             </div>
             <div class="sidebar-footer">
-                <p>&copy; 2026 Antigravity. 배터리 소자 전공 교수 감수.</p>
+                <p>&copy; 2026 Antigravity. 이차전지 소재 데이터 분석 툴.</p>
             </div>
         </aside>
 
@@ -335,10 +335,10 @@
                                     <thead>
                                         <tr>
                                             <th>데이터셋</th>
-                                            <th>초기 소듐화 용량 (Discharge, mAh/g)</th>
-                                            <th>초기 탈소듐 용량 (Charge, mAh/g)</th>
+                                            <th>초기 방전 용량 (Discharge, mAh/g)</th>
+                                            <th>초기 충전 용량 (Charge, mAh/g)</th>
                                             <th>초기 가역 효율 (ICE, %)</th>
-                                            <th>교수진 디스커션 가이드</th>
+                                            <th>분석 코멘트</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -395,7 +395,7 @@
                                             <th>Plateau 영역 용량 (mAh/g)</th>
                                             <th>Plateau 분율 (%)</th>
                                             <th>총 방전 용량 (mAh/g)</th>
-                                            <th>교수진 디스커션 가이드</th>
+                                            <th>분석 코멘트</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -511,8 +511,8 @@
                                         <label for="selectDqDvMode">충방전 모드:</label>
                                         <select id="selectDqDvMode" class="select-field inline-select">
                                             <option value="both" selected>충방전 전체 (Both)</option>
-                                            <option value="charge">충전만 (Desodiation)</option>
-                                            <option value="discharge">방전만 (Sodiation)</option>
+                                            <option value="charge">충전만 (Charge)</option>
+                                            <option value="discharge">방전만 (Discharge)</option>
                                         </select>
                                     </div>
                                     <div class="control-item slider-item" style="min-width: 150px;">

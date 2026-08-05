@@ -18,8 +18,8 @@ function generateDemoDatasets() {
         id: "demo_rate_" + Date.now(),
         projectName: activeProjectId,
         experimentType: "rate",
-        dataName: "Demo_HC_Rate_Test",
-        customName: "Demo_HC_Rate_Test",
+        dataName: "Demo_Rate_Test",
+        customName: "Demo_Rate_Test",
         sampleName: "Demo_Hard_Carbon",
         filename: "demo_rate.csv",
         uploadedAt: baseTime,
@@ -56,8 +56,8 @@ function generateDemoDatasets() {
         id: "demo_cycle_" + (Date.now() + 1),
         projectName: activeProjectId,
         experimentType: "cycle_performance",
-        dataName: "Demo_HC_Long_Cycle",
-        customName: "Demo_HC_Long_Cycle",
+        dataName: "Demo_Long_Cycle",
+        customName: "Demo_Long_Cycle",
         sampleName: "Demo_Hard_Carbon",
         filename: "demo_cycle.xlsx",
         uploadedAt: baseTime,
@@ -92,8 +92,8 @@ function generateDemoDatasets() {
         id: "demo_gitt_" + (Date.now() + 2),
         projectName: activeProjectId,
         experimentType: "gitt",
-        dataName: "Demo_HC_GITT_Diffusion",
-        customName: "Demo_HC_GITT_Diffusion",
+        dataName: "Demo_GITT_Diffusion",
+        customName: "Demo_GITT_Diffusion",
         sampleName: "Demo_Hard_Carbon",
         filename: "demo_gitt.txt",
         uploadedAt: baseTime,
@@ -128,8 +128,8 @@ function generateDemoDatasets() {
         id: "demo_cv_" + (Date.now() + 3),
         projectName: activeProjectId,
         experimentType: "cv",
-        dataName: "Demo_HC_CV_Scan",
-        customName: "Demo_HC_CV_Scan",
+        dataName: "Demo_CV_Scan",
+        customName: "Demo_CV_Scan",
         sampleName: "Demo_Hard_Carbon_CV",
         filename: "demo_cv.csv",
         uploadedAt: baseTime,
@@ -260,34 +260,3 @@ async function addMockUpdatedDataset() {
         filename: "auto_convert_" + Date.now() + ".wrd",
         uploadedAt: baseTime,
         lastConvertedAt: baseTime,
-        conversionStatus: "updated",
-        keyMetric: "ICE: 84.1%",
-        totalCycles: 5,
-        ice: "84.1",
-        compareEnabled: true,
-        mass: 2.58,
-        processedCycles: {
-            1: {
-                sodiation: [
-                    { voltage: 1.0, capacity: 0, current: -0.1 },
-                    { voltage: 0.01, capacity: 200, current: -0.1 }
-                ],
-                desodiation: [
-                    { voltage: 0.01, capacity: 0, current: 0.1 },
-                    { voltage: 1.5, capacity: 168, current: 0.1 }
-                ],
-                totalDischargeCap: 200,
-                totalChargeCap: 168
-            }
-        }
-    };
-    
-    normalizeDataset(newDs);
-    datasetLibrary.push(newDs);
-    await saveDatasetToDB(newDs);
-    
-    renderDatasetLibraryUI();
-    renderLibraryTable();
-    switchActiveDataset(newDs.id);
-}
-

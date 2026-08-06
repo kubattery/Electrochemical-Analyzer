@@ -23,14 +23,13 @@
 <script>
       (function () {
         if (typeof Chart === 'undefined') return;
-        // Ctrl+드래그: 영역 확대(사각형 표시) · 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원래대로
+        // 그냥 드래그: 영역 확대(사각형) · 휠: 확대/축소 · Ctrl+드래그: 이동 · 더블클릭: 원래대로
         Chart.defaults.plugins = Chart.defaults.plugins || {};
         Chart.defaults.plugins.zoom = {
           zoom: {
             wheel: { enabled: true, speed: 0.1 },
             drag: {
               enabled: true,
-              modifierKey: 'ctrl',
               backgroundColor: 'rgba(96,165,250,0.35)',
               borderColor: '#93c5fd',
               borderWidth: 2
@@ -38,7 +37,7 @@
             pinch: { enabled: true },
             mode: 'xy'
           },
-          pan: { enabled: true, mode: 'xy' },
+          pan: { enabled: true, modifierKey: 'ctrl', mode: 'xy' },
           limits: {
             x: { min: 'original', max: 'original' },
             y: { min: 'original', max: 'original' }
@@ -53,10 +52,9 @@
             });
           }
         });
-        // 각 그래프 아래 확대 사용법 안내(작은 글씨) 자동 삽입
         document.addEventListener('DOMContentLoaded', function () {
           var ids = ['chartProfile', 'chartSlopePlateau', 'chartRateCycles', 'chartRateSummary', 'chartDqDv'];
-          var help = '🔍 Ctrl + 드래그: 영역 확대  ·  마우스 휠: 확대/축소  ·  드래그: 이동  ·  더블클릭: 원래대로';
+          var help = '🔍 드래그: 영역 확대  ·  마우스 휠: 확대/축소  ·  Ctrl + 드래그: 이동  ·  더블클릭: 원래대로';
           ids.forEach(function (id) {
             var c = document.getElementById(id);
             if (!c || !c.parentNode) return;

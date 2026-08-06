@@ -18,11 +18,12 @@
     <!-- Chart.js CDN & SheetJS (Excel Parser) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- 차트 확대(줌) 플러그인 + 전역 설정 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
 <script>
       (function () {
         if (typeof Chart === 'undefined') return;
-        // 마우스 휠: 확대/축소 · 더블클릭: 원래대로
+        // 마우스 휠: 확대/축소 · 드래그: 확대 화면 이동 · 더블클릭: 원래대로
         Chart.defaults.plugins = Chart.defaults.plugins || {};
         Chart.defaults.plugins.zoom = {
           zoom: {
@@ -31,7 +32,7 @@
             pinch: { enabled: false },
             mode: 'xy'
           },
-          pan: { enabled: false },
+          pan: { enabled: true, mode: 'xy' },
           limits: {
             x: { min: 'original', max: 'original' },
             y: { min: 'original', max: 'original' }
@@ -48,7 +49,7 @@
         });
         document.addEventListener('DOMContentLoaded', function () {
           var ids = ['chartProfile', 'chartSlopePlateau', 'chartRateCycles', 'chartRateSummary', 'chartDqDv'];
-          var help = '🔍 마우스 휠: 확대/축소  ·  더블클릭: 원래대로';
+          var help = '🔍 마우스 휠: 확대/축소  ·  드래그: 확대 화면 이동  ·  더블클릭: 원래대로';
           ids.forEach(function (id) {
             var c = document.getElementById(id);
             if (!c || !c.parentNode) return;

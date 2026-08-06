@@ -17,6 +17,41 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <!-- Chart.js CDN & SheetJS (Excel Parser) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 차트 확대(줌) 플러그인 + 전역 설정 -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+    <script>
+      (function () {
+        if (typeof Chart === 'undefined') return;
+        // 모든 차트에 확대(줌) 기능 기본 적용
+        //  - 드래그: 원하는 사각형 구간 선택 확대(돋보기)
+        //  - 마우스 휠: 커서 기준 확대/축소
+        //  - Ctrl + 드래그: 확대 상태에서 이동(패닝)
+        //  - 더블클릭: 원래 배율로 복원
+        Chart.defaults.plugins = Chart.defaults.plugins || {};
+        Chart.defaults.plugins.zoom = {
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            drag: {
+              enabled: true,
+              backgroundColor: 'rgba(59,130,246,0.15)',
+              borderColor: 'rgba(59,130,246,0.7)',
+              borderWidth: 1
+            },
+            mode: 'xy'
+          },
+          pan: { enabled: true, mode: 'xy', modifierKey: 'ctrl' }
+        };
+        Chart.register({
+          id: 'dblClickResetZoom',
+          afterInit: function (chart) {
+            if (!chart.canvas) return;
+            chart.canvas.addEventListener('dblclick', function () {
+              if (typeof chart.resetZoom === 'function') chart.resetZoom();
+            });
+          }
+        });
+      })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="style.css?v=2.9.0">
 </head>

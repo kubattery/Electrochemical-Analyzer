@@ -18,6 +18,7 @@
     <!-- Chart.js CDN & SheetJS (Excel Parser) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- 차트 확대(줌) 플러그인 + 전역 설정 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
 <script>
       (function () {
@@ -30,9 +31,9 @@
             drag: {
               enabled: true,
               modifierKey: 'ctrl',
-              backgroundColor: 'rgba(59,130,246,0.20)',
-              borderColor: 'rgba(59,130,246,0.9)',
-              borderWidth: 1
+              backgroundColor: 'rgba(96,165,250,0.35)',
+              borderColor: '#93c5fd',
+              borderWidth: 2
             },
             mode: 'xy'
           },

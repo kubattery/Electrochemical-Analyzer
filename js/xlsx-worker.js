@@ -11,7 +11,7 @@ function checkHasHeaders(jsonData) {
     for (let i = 0; i < Math.min(20, jsonData.length); i++) {
         const row = jsonData[i];
         if (!row || !Array.isArray(row)) continue;
-        let hasTime = false, hasStep = false, hasVoltage = false, hasCapacity = false;
+        let hasTime = false, hasStep = false, hasVoltage = false, hasCapacity = false, hasCurrent = false;
         for (const cell of row) {
             if (cell !== undefined && cell !== null) {
                 const c = String(cell).toLowerCase().trim();
@@ -19,10 +19,12 @@ function checkHasHeaders(jsonData) {
                 if (c.includes('step') && c.includes('no')) hasStep = true;
                 if (c.includes('voltage') || c.includes('potential') || c.includes('전압') || c === 'v') hasVoltage = true;
                 if (c.includes('capacity') || c.includes('용량') || c.includes('cap') || c.includes('|q|')) hasCapacity = true;
+                if (c.includes('current') || c.includes('전류') || c === 'i' || c.includes('(a)') || c.includes('(ma)')) hasCurrent = true;
             }
         }
         if (hasTime && hasStep && hasVoltage) return true;
         if (hasVoltage && hasCapacity) return true;
+        if (hasVoltage && hasCurrent) return true;
     }
     return false;
 }

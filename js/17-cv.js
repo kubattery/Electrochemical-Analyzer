@@ -169,20 +169,23 @@ function detectCVCycles(V, I) {
     var el = $('chartCV'); if (!el || typeof Chart === 'undefined') return;
     var ctx = el.getContext('2d');
     if (cvChart) cvChart.destroy();
+    // 데이터 기준 x축(전압) 범위를 명시 → CV 루프(시작·끝 전압이 동일)에서 축이 붕괴되는 문제 방지
+    var xmin = Infinity, xmax = -Infinity;
+    for (var d = 0; d < data.length; d++) { var px = data[d].x; if (px < xmin) xmin = px; if (px > xmax) xmax = px; }
+    if (!isFinite(xmin)) { xmin = 0; xmax = 1; }
     cvChart = new Chart(ctx, {
       type: 'line',
-      data: { datasets: [{ label: num + ' 사이클', data: data, parsing: false, borderColor: '#f59e0b', borderWidth: 1.3, pointRadius: 0, showLine: true, fill: false, tension: 0 }] },
+      data: { datasets: [{ label: num + ' 사이클', data: data, borderColor: '#f59e0b', borderWidth: 1.3, pointRadius: 0, showLine: true, fill: false, tension: 0 }] },
       options: {
-        responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+        responsive: true, maintainAspectRatio: false, animation: false,
         scales: {
-          x: { type: 'linear', title: { display: true, text: 'Voltage (V)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+          x: { type: 'linear', min: xmin, max: xmax, title: { display: true, text: 'Voltage (V)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
           y: { title: { display: true, text: 'Current (mA)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
         },
         plugins: { legend: { display: false }, tooltip: { enabled: true } }
       }
     });
   }
-
   function getSensitivity() {
     var el = $('cvSensitivity'), v = el ? parseFloat(el.value) : 0.08;
     if (isNaN(v) || v <= 0) v = 0.08;

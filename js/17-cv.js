@@ -148,8 +148,10 @@ function detectCVCycles(V, I) {
     }
     if (!cvCycles.length) { setStatus('사이클을 검출하지 못했습니다.'); return; }
     setStatus(filename + ' · 총 ' + cvCycles.length + ' 사이클');
-    if (sel) sel.value = cvCycles[0].num;
-    renderCycle(cvCycles[0].num);
+// 1번 사이클은 형성(formation) 단계라 이상해 보일 수 있어, 기본값은 중간 사이클로 표시
+    var startNum = cvCycles[Math.floor(cvCycles.length / 2)].num;
+    if (sel) sel.value = startNum;
+    renderCycle(startNum);
   }
 
   function renderCycle(num) {

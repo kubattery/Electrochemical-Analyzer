@@ -87,28 +87,40 @@
     buildCycles(V, I, filename);
   }
 
-  function detectCVCycles(V, I) {
-    var n = V.length, k, vmin = Infinity, vmax = -Infinity;
+function detectCVCycles(V, I) {
+    // 정점(vertex) 기반 검출: 전압이 상단/하단 정점 부근에 도달하는 지점을 정점으로 잡고,
+    // 하단정점 → 상단정점 → 하단정점 을 한 사이클(닫힌 루프)로 묶는다. (노이즈에 견고)
+    var n = V.length, k;
+    var vmin = Infinity, vmax = -Infinity;
     for (k = 0; k < n; k++) { if (V[k] < vmin) vmin = V[k]; if (V[k] > vmax) vmax = V[k]; }
-    var thr = (vmax - vmin) * 0.03, turns = [], dir = 0, ext = V[0];
-    for (k = 1; k < n; k++) {
-      var dv = V[k] - ext;
-      if (dir === 0) { if (Math.abs(dv) > thr) { dir = dv > 0 ? 1 : -1; ext = V[k]; } }
-      else {
-        if ((dir > 0 && V[k] > ext) || (dir < 0 && V[k] < ext)) ext = V[k];
-        else if (Math.abs(V[k] - ext) > thr) { turns.push(k); dir = -dir; ext = V[k]; }
+    var span = vmax - vmin;
+    if (span <= 0) return [];
+    var hiThr = vmax - span * 0.15, loThr = vmin + span * 0.15;
+    var verts = [], zone = 0, extIdx = -1, extVal = 0;
+    for (k = 0; k < n; k++) {
+      if (V[k] >= hiThr) {
+        if (zone !== 1) {
+          if (zone === -1 && extIdx >= 0) verts.push({ idx: extIdx, type: 'lo' });
+          zone = 1; extIdx = k; extVal = V[k];
+        } else if (V[k] > extVal) { extVal = V[k]; extIdx = k; }
+      } else if (V[k] <= loThr) {
+        if (zone !== -1) {
+          if (zone === 1 && extIdx >= 0) verts.push({ idx: extIdx, type: 'hi' });
+          zone = -1; extIdx = k; extVal = V[k];
+        } else if (V[k] < extVal) { extVal = V[k]; extIdx = k; }
       }
     }
-    var bounds = [0].concat(turns).concat([n]), sweeps = [];
-    for (var s = 0; s < bounds.length - 1; s++) {
-      var a = bounds[s], b = bounds[s + 1];
-      if (b - a >= 10) sweeps.push({ a: a, b: b, up: V[b - 1] > V[a] });
-    }
-    var cycles = [], i = 0, num = 0;
-    while (i < sweeps.length) {
-      var sw = sweeps[i];
-      if (sw.up && i + 1 < sweeps.length && !sweeps[i + 1].up) { num++; cycles.push({ num: num, a: sw.a, mid: sw.b, end: sweeps[i + 1].b }); i += 2; }
-      else i++;
+    if (zone === 1 && extIdx >= 0) verts.push({ idx: extIdx, type: 'hi' });
+    else if (zone === -1 && extIdx >= 0) verts.push({ idx: extIdx, type: 'lo' });
+    var loV = [], hiV = [];
+    for (k = 0; k < verts.length; k++) { if (verts[k].type === 'lo') loV.push(verts[k].idx); else hiV.push(verts[k].idx); }
+    var cycles = [], num = 0;
+    for (var j = 0; j < loV.length - 1; j++) {
+      var a = loV[j], end = loV[j + 1], mid = -1;
+      for (var h = 0; h < hiV.length; h++) { if (hiV[h] > a && hiV[h] < end) { mid = hiV[h]; break; } }
+      if (mid < 0) continue;
+      num++;
+      cycles.push({ num: num, a: a, mid: mid, end: end });
     }
     return cycles;
   }

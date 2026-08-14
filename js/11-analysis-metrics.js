@@ -44,6 +44,9 @@ function runAnalysis() {
 
     // "데이터 한눈에 보기" 통합 뷰가 활성 상태이면 함께 갱신
     if (typeof refreshCombinedIfActive === 'function') refreshCombinedIfActive();
+
+    // Rate/Cycle 탭의 Cyclability 뷰가 활성 상태이면 함께 갱신
+    if (typeof refreshCyclabilityIfActive === 'function') refreshCyclabilityIfActive();
 }
 
 /**

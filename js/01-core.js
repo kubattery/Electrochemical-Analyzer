@@ -242,8 +242,7 @@ function initTabs() {
             if (!tabId) return;
 
             // 데이터 라이브러리 탭(tab-library)은 활성 데이터셋이 없어도 언제나 진입을 허용합니다.
-            // Rate/Cycle 탭(tab-rate)은 Cyclability 하위 뷰가 자체 파일 업로드를 쓰므로 데이터 없이도 진입 허용합니다.
-            if (tabId !== 'tab-library' && tabId !== 'tab-rate' && !hasActiveDataset()) return; // No data loaded
+            if (tabId !== 'tab-library' && !hasActiveDataset()) return; // No data loaded
 
             const tabPanel = document.getElementById(tabId);
             if (!tabPanel) return; // 해당 패널이 DOM에 없으면 스킵
@@ -272,3 +271,4 @@ function triggerChartResize() {
     if (chartRateSummaryInstance) chartRateSummaryInstance.resize();
     if (chartDqDvInstance) chartDqDvInstance.resize();
 }
+

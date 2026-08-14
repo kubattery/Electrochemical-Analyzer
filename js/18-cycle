@@ -14,6 +14,7 @@
     "use strict";
 
     let chartInstance = null;
+    let _lastKind = null;   // 직전 판별된 실험 종류 (종류 바뀔 때만 자동 전환)
     const COLOR = "#60a5fa";
 
     // DOM (index.html #cycleSubview 내부) — DOMContentLoaded 후 grab
@@ -73,6 +74,48 @@
         const tab = document.getElementById("tab-rate");
         return cycleSubview && cycleSubview.style.display !== "none" &&
                tab && tab.classList.contains("active");
+    }
+
+    // 실험 종류 자동 판별
+    //  - rate capability: 율속이 여러 번 바뀜 → 단일 율속 구간이 짧다 (계단 여러 개)
+    //  - cyclability: 한 율속으로 길게 → 단일 율속 구간이 매우 길다
+    function detectExperimentKind(series) {
+        const total = series.length;
+        if (total < 12) return "rate";                 // 너무 짧으면 rate 로 간주
+        const m = detectMainSegment(series);
+        const mainLen = m.end - m.start + 1;
+        // 최다 단일 율속 구간이 충분히 길거나(≥15) 전체의 60% 이상이면 장기 사이클링
+        if (mainLen >= 15 || mainLen / total >= 0.6) return "cycle";
+        return "rate";
+    }
+
+    // 상호 배타(잠금) UI: cycle 데이터면 Rate 쪽 잠금, rate 데이터면 Cycle 쪽 잠금
+    function setLock(kind) {
+        const rc = document.getElementById("rateContent");
+        const rl = document.getElementById("rateLockedMsg");
+        const cc = document.getElementById("cycleContent");
+        const cl = document.getElementById("cycleLockedMsg");
+        const showRate = (kind !== "cycle");   // cycle 데이터일 때만 rate 잠금
+        const showCycle = (kind !== "rate");   // rate 데이터일 때만 cycle 잠금
+        if (rc) rc.style.display = showRate ? "" : "none";
+        if (rl) rl.style.display = showRate ? "none" : "";
+        if (cc) cc.style.display = showCycle ? "" : "none";
+        if (cl) cl.style.display = showCycle ? "none" : "";
+    }
+
+    // runAnalysis 등에서 호출: 종류 판별 → 잠금 → (종류 바뀌면) 알맞은 뷰로 자동 전환 → 렌더
+    function applyExperimentKind() {
+        const series = getSeries();
+        if (!series.length) { setLock(null); _lastKind = null; return; }
+        const kind = detectExperimentKind(series);
+        window.experimentKind = kind;
+        setLock(kind);
+        if (kind !== _lastKind) {
+            _lastKind = kind;
+            showView(kind);                          // 새 데이터 → 알맞은 뷰로 자동 전환
+        } else if (kind === "cycle" && isCycleViewActive()) {
+            renderCyclability();                     // 같은 cycle 데이터 갱신
+        }
     }
 
     // ==================================================================
@@ -203,7 +246,7 @@
                 b.classList.toggle("active", b.dataset.view === view));
         }
         if (isCycle) {
-            renderCyclability();
+            if (window.experimentKind !== "rate") renderCyclability();  // rate 데이터면 잠금 메시지만 표시
             if (chartInstance) setTimeout(() => chartInstance.resize(), 30);
         } else if (typeof triggerChartResize === "function") {
             setTimeout(triggerChartResize, 30);
@@ -220,9 +263,10 @@
         if (btnCsv) btnCsv.addEventListener("click", downloadCsv);
     }
 
-    // 새 데이터 분석/갱신 시 Cyclability가 활성 뷰면 다시 그림 (runAnalysis에서 호출)
+    // runAnalysis 에서 호출되는 진입점 (이름 호환 유지):
+    // 실험 종류 판별 → 알맞은 뷰로 자동 라우팅 + 반대쪽 잠금 + 렌더
     window.refreshCyclabilityIfActive = function () {
-        if (isCycleViewActive()) renderCyclability();
+        applyExperimentKind();
     };
 
     document.addEventListener("DOMContentLoaded", init);

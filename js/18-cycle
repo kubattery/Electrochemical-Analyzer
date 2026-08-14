@@ -1,0 +1,229 @@
+/* ============================================================================
+ * HC-Analyzer  ·  18-cyclability.js
+ * 역할: "Rate / Cycle" 통합 탭의 Cyclability(장기 수명) 하위 뷰 + 뷰 전환 토글
+ *
+ * [설계 메모]
+ *  - 데이터 소스는 메인 앱이 voltage profile 을 파싱해 만든 전역 processedCycles 입니다.
+ *    (rate capability 와 "같은 데이터"를 다른 관점으로 보는 것)  → 별도 업로드/파서 불필요.
+ *  - 표시: 사이클별 방전 비용량(totalDischargeCap). 주 율속 구간 자동 감지(형성/회복 제외)
+ *          후 x축을 Cycle 1부터 다시 매겨 표시. 휠 확대/툴팁은 메인 앱 전역 설정을 사용.
+ *  - 기존 Rate capability 코드(11/13번 등)는 건드리지 않습니다.
+ * ============================================================================ */
+
+(function () {
+    "use strict";
+
+    let chartInstance = null;
+    const COLOR = "#60a5fa";
+
+    // DOM (index.html #cycleSubview 내부) — DOMContentLoaded 후 grab
+    let canvasEl, metricsEl, detectNoteEl, emptyEl;
+    let rcToggle, rateSubview, cycleSubview, btnPng, btnCsv;
+
+    function grabDom() {
+        canvasEl     = document.getElementById("cycChart");
+        metricsEl    = document.getElementById("cycMetrics");
+        detectNoteEl = document.getElementById("cycDetectNote");
+        emptyEl      = document.getElementById("cycEmpty");
+        btnPng       = document.getElementById("cycBtnPng");
+        btnCsv       = document.getElementById("cycBtnCsv");
+        rcToggle     = document.getElementById("rcToggle");
+        rateSubview  = document.getElementById("rateSubview");
+        cycleSubview = document.getElementById("cycleSubview");
+    }
+
+    // processedCycles → 사이클별 방전 비용량 시계열 [{x: cycleNo, y: mAh/g}]
+    function getSeries() {
+        if (typeof processedCycles === "undefined" || !processedCycles) return [];
+        const nums = Object.keys(processedCycles).map(Number).sort((a, b) => a - b);
+        const pts = [];
+        nums.forEach(cn => {
+            const c = processedCycles[cn];
+            if (!c) return;
+            const cap = c.totalDischargeCap;               // 방전 비용량 (cycle life 표준)
+            if (typeof cap === "number" && cap > 0) pts.push({ x: cn, y: cap });
+        });
+        return pts;
+    }
+
+    // 주 율속 구간 자동 감지: 율속이 바뀌면 용량이 계단처럼 급변하는 성질 이용 → 가장 긴 구간
+    function detectMainSegment(points) {
+        const n = points.length;
+        if (n < 4) return { start: 0, end: n - 1 };
+        const diffs = [];
+        for (let i = 1; i < n; i++) {
+            const prev = Math.abs(points[i - 1].y) || 1e-9;
+            diffs.push(Math.abs(points[i].y - points[i - 1].y) / prev);
+        }
+        const sorted = [...diffs].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)] || 0;
+        const threshold = Math.max(0.08, median * 4);
+        const starts = [0];
+        for (let i = 1; i < n; i++) { if (diffs[i - 1] > threshold) starts.push(i); }
+        starts.push(n);
+        let best = { start: 0, end: n - 1, len: 0 };
+        for (let k = 0; k < starts.length - 1; k++) {
+            const s = starts[k], e = starts[k + 1] - 1, len = e - s + 1;
+            if (len > best.len) best = { start: s, end: e, len };
+        }
+        return { start: best.start, end: best.end };
+    }
+
+    function isCycleViewActive() {
+        const tab = document.getElementById("tab-rate");
+        return cycleSubview && cycleSubview.style.display !== "none" &&
+               tab && tab.classList.contains("active");
+    }
+
+    // ==================================================================
+    // 렌더링
+    // ==================================================================
+    function renderCyclability() {
+        if (!canvasEl) return;
+        const all = getSeries();
+
+        if (!all.length) {
+            if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+            if (emptyEl) emptyEl.style.display = "block";
+            if (metricsEl) metricsEl.innerHTML = "";
+            if (detectNoteEl) detectNoteEl.style.display = "none";
+            return;
+        }
+        if (emptyEl) emptyEl.style.display = "none";
+
+        const m = detectMainSegment(all);
+        const mainRaw = all.slice(m.start, m.end + 1);
+        // 주 율속 구간만 · Cycle 1부터 재번호 (orig = 원본 사이클 번호, 툴팁용)
+        const plotPts = mainRaw.map((p, i) => ({ x: i + 1, y: p.y, orig: p.x }));
+
+        // 감지 안내
+        if (detectNoteEl) {
+            const head = m.start, tail = all.length - 1 - m.end, mainLen = mainRaw.length;
+            if (head + tail <= 0) {
+                detectNoteEl.innerHTML = `전체 <strong>${mainLen}</strong> 사이클을 Cycle 1부터 표시합니다.`;
+            } else {
+                detectNoteEl.innerHTML =
+                    `주 율속 구간 <strong>${mainLen}</strong> 사이클(원본 Cycle ${all[m.start].x}–${all[m.end].x})을 ` +
+                    `<strong>Cycle 1부터 다시 매겨</strong> 표시합니다. ` +
+                    `<span style="opacity:0.75;">제외: 초기 ${head} · 말기 ${tail} 사이클 (형성/회복 등 다른 율속)</span>`;
+            }
+            detectNoteEl.style.display = "block";
+        }
+
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(canvasEl.getContext("2d"), {
+            type: "line",
+            data: {
+                datasets: [{
+                    label: "Discharge Capacity (mAh/g)",
+                    data: plotPts,
+                    borderColor: COLOR, backgroundColor: COLOR, pointBackgroundColor: COLOR,
+                    pointRadius: 3, pointHoverRadius: 6, borderWidth: 1.5, tension: 0, showLine: true
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: {
+                        type: "linear",
+                        title: { display: true, text: "Cycle Number", color: "#fff", font: { size: 13 } },
+                        grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af", precision: 0 }
+                    },
+                    y: {
+                        title: { display: true, text: "Specific Capacity (mAh/g)", color: "#fff", font: { size: 13 } },
+                        grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af" }, beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: "rgba(15, 20, 35, 0.95)", borderColor: COLOR, borderWidth: 1,
+                        titleColor: "#fff", bodyColor: "#e5e7eb", padding: 10, displayColors: false,
+                        callbacks: {
+                            title: (items) => `Cycle ${items[0].parsed.x}`,
+                            label: (item) => `${item.parsed.y.toFixed(2)} mAh/g`,
+                            afterLabel: (item) => (item.raw && item.raw.orig != null) ? `원본 Cycle ${item.raw.orig}` : ""
+                        }
+                    }
+                }
+            }
+        });
+
+        if (metricsEl) {
+            const n = mainRaw.length, first = mainRaw[0], last = mainRaw[n - 1];
+            const cards = [
+                { label: "사이클 수", value: `${n}`, unit: "cycles" },
+                { label: "초기 용량 (Cyc 1)", value: first.y.toFixed(1), unit: "mAh/g" },
+                { label: "최종 용량 (Cyc " + n + ")", value: last.y.toFixed(1), unit: "mAh/g" }
+            ];
+            metricsEl.innerHTML = cards.map(c => `
+                <div class="cyc-metric-card">
+                    <div class="cyc-metric-label">${c.label}</div>
+                    <div class="cyc-metric-value">${c.value}<span class="cyc-metric-unit">${c.unit}</span></div>
+                </div>`).join("");
+        }
+    }
+
+    // ==================================================================
+    // 내보내기
+    // ==================================================================
+    function downloadPng() {
+        if (!chartInstance) return;
+        const a = document.createElement("a");
+        a.href = chartInstance.toBase64Image("image/png", 1);
+        a.download = "cyclability_cycle.png";
+        a.click();
+    }
+    function downloadCsv() {
+        const all = getSeries();
+        if (!all.length) return;
+        const m = detectMainSegment(all);
+        const pts = all.slice(m.start, m.end + 1);
+        let csv = "Cycle Number,Original Cycle,Specific Capacity (mAh/g)\n";
+        pts.forEach((p, i) => { csv += `${i + 1},${p.x},${p.y}\n`; });
+        const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "cyclability_cycle.csv";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    // ==================================================================
+    // 뷰 전환 토글
+    // ==================================================================
+    function showView(view) {
+        if (!rateSubview || !cycleSubview) return;
+        const isCycle = view === "cycle";
+        rateSubview.style.display = isCycle ? "none" : "";
+        cycleSubview.style.display = isCycle ? "" : "none";
+        if (rcToggle) {
+            rcToggle.querySelectorAll(".rc-toggle-btn").forEach(b =>
+                b.classList.toggle("active", b.dataset.view === view));
+        }
+        if (isCycle) {
+            renderCyclability();
+            if (chartInstance) setTimeout(() => chartInstance.resize(), 30);
+        } else if (typeof triggerChartResize === "function") {
+            setTimeout(triggerChartResize, 30);
+        }
+    }
+
+    function init() {
+        grabDom();
+        if (rcToggle) {
+            rcToggle.querySelectorAll(".rc-toggle-btn").forEach(btn =>
+                btn.addEventListener("click", () => showView(btn.dataset.view)));
+        }
+        if (btnPng) btnPng.addEventListener("click", downloadPng);
+        if (btnCsv) btnCsv.addEventListener("click", downloadCsv);
+    }
+
+    // 새 데이터 분석/갱신 시 Cyclability가 활성 뷰면 다시 그림 (runAnalysis에서 호출)
+    window.refreshCyclabilityIfActive = function () {
+        if (isCycleViewActive()) renderCyclability();
+    };
+
+    document.addEventListener("DOMContentLoaded", init);
+})();

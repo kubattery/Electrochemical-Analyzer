@@ -117,6 +117,7 @@
         .rc-toggle-btn:hover { color:#fff; }
         .rc-toggle-btn.active { color:#fff; background:rgba(59,130,246,0.22); }
         .rc-hint { text-align:center; padding:22px; font-size:13px; color:var(--text-muted); }
+        .rc-locked-msg { text-align:center; padding:64px 20px; font-size:18px; font-weight:700; color:var(--color-danger); background:rgba(248,113,113,0.06); border:1px dashed rgba(248,113,113,0.35); border-radius:12px; }
         .cyc-metric-card { background:rgba(255,255,255,0.025); border:1px solid var(--border-color); border-radius:10px; padding:14px 16px; }
         .cyc-metric-label { font-size:11px; color:var(--text-muted); margin-bottom:6px; }
         .cyc-metric-value { font-size:22px; font-weight:700; color:#fff; }
@@ -529,6 +530,7 @@
 
                     <!-- ===== Rate capability 하위 뷰 (기존 그대로, 감싸기만 함) ===== -->
                     <div id="rateSubview">
+                    <div id="rateContent">
                     <div class="chart-layout-grid two-columns">
                         <!-- Rate capacity line chart over cycles -->
                         <div class="dashboard-chart-card">
@@ -586,10 +588,13 @@
                             </table>
                         </div>
                     </div>
+                    </div><!-- /#rateContent -->
+                    <div id="rateLockedMsg" class="rc-locked-msg" style="display:none;">Rate capability 분석을 진행할 수 없습니다!</div>
                     </div><!-- /#rateSubview -->
 
                     <!-- ===== Cyclability 하위 뷰 (processedCycles 기반, 그래프 틀 항상 표시) ===== -->
                     <div id="cycleSubview" style="display:none;">
+                        <div id="cycleContent">
                         <div class="dashboard-chart-card">
                             <div class="card-header">
                                 <h3 class="chart-title">Cycle Number vs. Specific Capacity</h3>
@@ -609,6 +614,8 @@
                             <div id="cycDetectNote" style="font-size:12px; color:var(--text-muted); line-height:1.6; margin-bottom:12px; background:rgba(96,165,250,0.06); border:1px solid rgba(96,165,250,0.18); border-radius:8px; padding:10px 12px; display:none;"></div>
                             <div id="cycMetrics" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px;"></div>
                         </div>
+                        </div><!-- /#cycleContent -->
+                        <div id="cycleLockedMsg" class="rc-locked-msg" style="display:none;">Cyclability 분석을 진행할 수 없습니다!</div>
                     </div>
                 </div>
 
@@ -857,6 +864,6 @@
     <script src="js/15-profile-cycles.js?v=3.0.0"></script>
     <script src="js/16-combined-view.js?v=1.0.0"></script>
     <script src="js/17-cv.js?v=4.0.0"></script>
-    <script src="js/18-cyclability.js?v=2.0.0"></script>
+    <script src="js/18-cyclability.js?v=2.1.0"></script>
 </body>
 </html>

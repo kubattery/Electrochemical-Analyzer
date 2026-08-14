@@ -44,12 +44,6 @@
     const btnPng       = document.getElementById("cycBtnPng");
     const btnCsv       = document.getElementById("cycBtnCsv");
 
-    // 통합 업로드(자동 판별)
-    const uDrop  = document.getElementById("rcUniversalDrop");
-    const uInput = document.getElementById("rcUniversalInput");
-    const uPick  = document.getElementById("rcUniversalPick");
-    const uError = document.getElementById("rcUploadError");
-
     // Rate / Cycle 뷰 전환
     const rcToggle     = document.getElementById("rcToggle");
     const rateSubview  = document.getElementById("rateSubview");
@@ -85,33 +79,10 @@
     // 1. 업로드 UI 바인딩
     // ==================================================================
     function initUpload() {
-        // 통합 드롭존(자동 판별) + Cycle 하위 뷰의 드롭존 모두 동일한 자동 라우팅 사용
-        bindDropZone(uDrop, uInput);
-        bindDropZone(dropZone, fileInput);
-        if (uPick) uPick.addEventListener("click", (e) => { e.stopPropagation(); uInput && uInput.click(); });
-        [uInput, fileInput].forEach(inp => {
-            if (!inp) return;
-            inp.addEventListener("change", (e) => {
-                const file = e.target.files && e.target.files[0];
-                if (file) handleUniversalFile(file);
-                inp.value = ""; // 같은 파일 재선택 허용
-            });
-        });
+        // 업로드는 왼쪽 사이드바(#dropZone/#fileInput)에서 처리합니다.
+        // 여기서는 PNG/CSV 저장 버튼만 바인딩합니다.
         if (btnPng) btnPng.addEventListener("click", downloadPng);
         if (btnCsv) btnCsv.addEventListener("click", downloadCsv);
-    }
-
-    function bindDropZone(zone, input) {
-        if (!zone) return;
-        zone.addEventListener("click", () => input && input.click());
-        ["dragenter", "dragover"].forEach(ev =>
-            zone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); zone.classList.add("dragover"); }));
-        ["dragleave", "drop"].forEach(ev =>
-            zone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); zone.classList.remove("dragover"); }));
-        zone.addEventListener("drop", (e) => {
-            const file = e.dataTransfer.files && e.dataTransfer.files[0];
-            if (file) handleUniversalFile(file);
-        });
     }
 
     // ==================================================================
@@ -144,44 +115,36 @@
         return "unknown";
     }
 
-    // 통합 업로드 진입점: 종류 판별 후 알맞은 뷰로 라우팅
-    function handleUniversalFile(file) {
+    // 사이드바 업로드에서 호출: 헤더 몇 줄만 빠르게 읽어 종류 판별 (대용량 원시 파일 대비 sheetRows 제한)
+    function detectFile(file, cb) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array", sheetRows: 8 });
+                cb(detectFileType(wb));
+            } catch (err) { cb("unknown"); }
+        };
+        reader.onerror = () => cb("unknown");
+        reader.readAsArrayBuffer(file);
+    }
+
+    // 사이클 요약 파일 로드 → 렌더 → cycle 확정(반대쪽 Rate 잠금)
+    function loadCycleFile(file) {
         clearUploadError();
         const reader = new FileReader();
         reader.onload = (e) => {
-            let workbook;
             try {
-                workbook = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-            } catch (err) {
-                showUploadError("파일을 읽을 수 없습니다: " + err.message);
-                return;
-            }
-            const type = detectFileType(workbook);
-
-            if (type === "rate") {
-                // Rate 원시 데이터 → 메인 앱 파이프라인으로 처리하고 Rate 뷰로 전환
-                showView("rate");
-                if (typeof handleMultipleFiles === "function") {
-                    handleMultipleFiles([file]);
-                } else {
-                    showUploadError("Rate 데이터로 인식했으나 메인 업로드 처리를 찾지 못했습니다. 사이드바에서 업로드해 주세요.");
-                }
-                return;
-            }
-
-            // cycle 또는 unknown → 사이클 요약 파싱 시도
-            try {
-                const result = parseCycleWorkbook(workbook);
+                const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+                const result = parseCycleWorkbook(wb);
                 if (!result.series.length) {
-                    showUploadError("데이터 형식을 인식하지 못했습니다. " +
-                        "Cycle 요약(Cycle No. + Discharge Q_s) 또는 Rate 원시(전압 + 용량) 파일인지 확인해 주세요.");
+                    showUploadError("Cycle 요약 컬럼(Cycle No. + Discharge Q_s)을 찾지 못했습니다.");
                     return;
                 }
                 lastFileName = file.name;
                 parsedSeries = result.series;
                 activeSeriesKey = parsedSeries[0].key;
-                showView("cycle");
                 renderAll(result);
+                setKind("cycle");
             } catch (err) {
                 console.error(err);
                 showUploadError("파일 처리 중 오류가 발생했습니다: " + err.message);
@@ -189,6 +152,27 @@
         };
         reader.onerror = () => showUploadError("파일을 읽을 수 없습니다.");
         reader.readAsArrayBuffer(file);
+    }
+
+    // 상호 배타(잠금) UI: cycle이면 Rate 쪽 잠금, rate면 Cycle 쪽 잠금
+    function applyExclusion(kind) {
+        const isCycle = kind === "cycle";
+        const rc = document.getElementById("rateContent");
+        const rl = document.getElementById("rateLockedMsg");
+        const cc = document.getElementById("cycleContent");
+        const cl = document.getElementById("cycleLockedMsg");
+        if (rc) rc.style.display = isCycle ? "none" : "";
+        if (rl) rl.style.display = isCycle ? "" : "none";
+        if (cc) cc.style.display = isCycle ? "" : "none";
+        if (cl) cl.style.display = isCycle ? "none" : "";
+    }
+
+    // 데이터 종류 확정: Rate/Cycle 탭 이동 + 알맞은 뷰 + 반대쪽 잠금
+    function setKind(kind) {
+        const btn = document.querySelector('.tab-btn[data-tab="tab-rate"]');
+        if (btn) btn.click();
+        showView(kind);
+        applyExclusion(kind);
     }
 
     // ==================================================================
@@ -592,7 +576,7 @@
         const pts = series.points.slice(m.start, m.end + 1);
         let csv = "Cycle Number,Original Cycle,Specific Capacity (mAh/g)\n";
         pts.forEach((p, i) => { csv += `${i + 1},${p.x},${p.y}\n`; });
-        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = (stripExt(lastFileName) || "cyclability") + "_cycle.csv";
@@ -608,13 +592,12 @@
     // 유틸
     // ==================================================================
     function showUploadError(msg) {
-        const el = uError || errorEl;
-        if (!el) return;
-        el.textContent = msg;
-        el.style.display = "block";
+        if (!errorEl) return;
+        errorEl.textContent = msg;
+        errorEl.style.display = "block";
     }
     function clearUploadError() {
-        [uError, errorEl].forEach(el => { if (el) { el.textContent = ""; el.style.display = "none"; } });
+        if (errorEl) { errorEl.textContent = ""; errorEl.style.display = "none"; }
     }
     function escapeHtml(str) {
         if (typeof str !== "string") return str;
@@ -627,4 +610,7 @@
         initToggle();
         initUpload();
     });
+
+    // 메인 앱(사이드바 업로드)에서 사용하는 진입점
+    window.Cyc = { detectFile, loadCycleFile, setKind };
 })();

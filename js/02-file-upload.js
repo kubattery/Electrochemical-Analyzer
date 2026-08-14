@@ -38,6 +38,26 @@ function initFileUpload() {
  * 여러 파일을 일괄 처리하는 진입점.
  */
 function handleMultipleFiles(files) {
+    // 단일 파일 업로드 시 Rate/Cycle 자동 판별 후 알맞은 분석으로 라우팅
+    if (files && files.length === 1 && window.Cyc && typeof window.Cyc.detectFile === 'function') {
+        window.Cyc.detectFile(files[0], (kind) => {
+            if (kind === 'cycle') {
+                // 사이클 요약 데이터 → Cyclability 표시 + Rate 잠금
+                window.Cyc.loadCycleFile(files[0]);
+            } else {
+                // 원시(전압-용량) 데이터 → 기존 Rate 파이프라인 + Cycle 잠금
+                _rateUploadQueue(files);
+                window.Cyc.setKind('rate');
+            }
+        });
+        return;
+    }
+    _rateUploadQueue(files);
+    if (window.Cyc && typeof window.Cyc.setKind === 'function') window.Cyc.setKind('rate');
+}
+
+// 기존 다중 파일 Rate 파이프라인 (진입점만 분리)
+function _rateUploadQueue(files) {
     _fileQueue = [...files];
     _parsedQueue = [];
     activeFilename.textContent = `파일 ${files.length}개 처리 중...`;

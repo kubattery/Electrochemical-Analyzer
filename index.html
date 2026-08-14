@@ -599,12 +599,10 @@
                     <!-- ===== Cyclability 하위 뷰 ===== -->
                     <div id="cycleSubview" style="display:none;">
                         <div id="cycleContent">
-                        <!-- 데이터 없을 때 안내 (업로드는 왼쪽 사이드바에서) -->
-                        <div id="cycEmpty" class="rc-hint">왼쪽 사이드바에서 Cycle 데이터 파일을 업로드하면 여기에 그래프가 표시됩니다.</div>
                         <div id="cycError" style="display:none; margin-bottom:12px; font-size:12.5px; color:#fca5a5; background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.3); border-radius:8px; padding:10px 12px; line-height:1.6;"></div>
 
-                        <!-- 결과 -->
-                        <div id="cycResult" style="display:none;">
+                        <!-- 그래프 틀은 데이터가 없어도 항상 표시 (rate capability 처럼) -->
+                        <div id="cycResult">
                             <div class="dashboard-chart-card">
                                 <div class="card-header">
                                     <h3 class="chart-title">Cycle Number vs. Specific Capacity <span id="cycFileName" style="font-size:12px; color:var(--text-muted); font-weight:400; margin-left:6px;"></span></h3>
@@ -621,6 +619,7 @@
                             </div>
 
                             <div class="dashboard-chart-card">
+                                <div id="cycEmpty" class="rc-hint" style="padding:22px;">왼쪽 사이드바에서 Cycle 데이터 파일을 업로드하면 그래프와 지표가 표시됩니다.</div>
                                 <div id="cycInfoCaption" style="font-size:12px; color:var(--text-muted); margin-bottom:12px; display:none;"></div>
                                 <div id="cycDetectNote" style="font-size:12px; color:var(--text-muted); line-height:1.6; margin-bottom:12px; background:rgba(96,165,250,0.06); border:1px solid rgba(96,165,250,0.18); border-radius:8px; padding:10px 12px; display:none;"></div>
                                 <div id="cycMetrics" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px;"></div>

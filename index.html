@@ -110,6 +110,20 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="style.css?v=2.9.0">
+    <!-- Rate/Cycle 통합: Cyclability 하위 뷰 스타일 (rate capability 스타일 미변경) -->
+    <style>
+        .rc-toggle { display:inline-flex; gap:6px; background:rgba(255,255,255,0.04); border:1px solid var(--border-color); border-radius:10px; padding:4px; margin-bottom:16px; }
+        .rc-toggle-btn { font-family:inherit; font-size:13px; font-weight:600; color:var(--text-muted); background:transparent; border:none; border-radius:7px; padding:8px 18px; cursor:pointer; transition:all .2s; }
+        .rc-toggle-btn:hover { color:#fff; }
+        .rc-toggle-btn.active { color:#fff; background:rgba(59,130,246,0.22); }
+        .rc-hint { text-align:center; padding:22px; font-size:13px; color:var(--text-muted); }
+        .rc-warn { display:flex; align-items:flex-start; gap:8px; font-size:12.5px; line-height:1.55; color:#fbbf24; background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.28); border-radius:10px; padding:10px 14px; margin-bottom:14px; }
+        .rc-warn .material-icons-round { font-size:18px; flex-shrink:0; }
+        .cyc-metric-card { background:rgba(255,255,255,0.025); border:1px solid var(--border-color); border-radius:10px; padding:14px 16px; }
+        .cyc-metric-label { font-size:11px; color:var(--text-muted); margin-bottom:6px; }
+        .cyc-metric-value { font-size:22px; font-weight:700; color:#fff; }
+        .cyc-metric-unit { font-size:11px; color:var(--text-muted); font-weight:500; margin-left:4px; }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -274,7 +288,7 @@
                         <span class="material-icons-round">show_chart</span> Slope / Plateau
                     </button>
                     <button class="tab-btn" data-tab="tab-rate">
-                        <span class="material-icons-round">speed</span> Rate Capability
+                        <span class="material-icons-round">speed</span> Rate / Cycle
                     </button>
                     <button class="tab-btn" data-tab="tab-dqdv">
                         <span class="material-icons-round">waves</span> dQ/dV 분석
@@ -507,8 +521,18 @@
                     </div>
                 </div>
 
-                <!-- Tab 3: Rate Capability -->
+                <!-- Tab 3: Rate / Cycle -->
                 <div class="tab-panel" id="tab-rate">
+                    <!-- Rate / Cycle 전환 토글 -->
+                    <div class="rc-toggle" id="rcToggle">
+                        <button type="button" class="rc-toggle-btn active" data-view="rate">Rate capability</button>
+                        <button type="button" class="rc-toggle-btn" data-view="cycle">Cyclability</button>
+                    </div>
+
+                    <!-- ===== Rate capability 하위 뷰 (기존 그대로, 감싸기만 함) ===== -->
+                    <div id="rateSubview">
+                    <div id="rateLockedMsg" class="rc-warn" style="display:none;"></div>
+                    <div id="rateContent">
                     <div class="chart-layout-grid two-columns">
                         <!-- Rate capacity line chart over cycles -->
                         <div class="dashboard-chart-card">
@@ -565,6 +589,34 @@
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                    </div><!-- /#rateContent -->
+                    </div><!-- /#rateSubview -->
+
+                    <!-- ===== Cyclability 하위 뷰 (processedCycles 기반, 그래프 틀 항상 표시) ===== -->
+                    <div id="cycleSubview" style="display:none;">
+                        <div id="cycleLockedMsg" class="rc-warn" style="display:none;"></div>
+                        <div id="cycleContent">
+                        <div class="dashboard-chart-card">
+                            <div class="card-header">
+                                <h3 class="chart-title">Cycle Number vs. Specific Capacity</h3>
+                                <div class="header-controls" style="display:flex; gap:8px;">
+                                    <button class="btn btn-secondary btn-sm" id="cycBtnPng"><span class="material-icons-round">image</span> PNG</button>
+                                    <button class="btn btn-secondary btn-sm" id="cycBtnCsv"><span class="material-icons-round">download</span> CSV</button>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="cycChart"></canvas>
+                            </div>
+                            <div style="font-size:11px; color:var(--text-muted); text-align:center; margin-top:8px; opacity:0.8; user-select:none;">🔍 마우스 휠: 확대/축소 · 드래그: 확대 화면 이동 · 더블클릭: 원래대로</div>
+                        </div>
+
+                        <div class="dashboard-chart-card">
+                            <div id="cycEmpty" class="rc-hint">voltage profile 데이터를 업로드하면 사이클별 용량 그래프가 표시됩니다.</div>
+                            <div id="cycDetectNote" style="font-size:12px; color:var(--text-muted); line-height:1.6; margin-bottom:12px; background:rgba(96,165,250,0.06); border:1px solid rgba(96,165,250,0.18); border-radius:8px; padding:10px 12px; display:none;"></div>
+                            <div id="cycMetrics" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px;"></div>
+                        </div>
+                        </div><!-- /#cycleContent -->
                     </div>
                 </div>
 
@@ -813,5 +865,6 @@
     <script src="js/15-profile-cycles.js?v=3.0.0"></script>
     <script src="js/16-combined-view.js?v=1.0.0"></script>
     <script src="js/17-cv.js?v=4.0.0"></script>
+    <script src="js/18-cyclability.js?v=3.0.0"></script>
 </body>
 </html>

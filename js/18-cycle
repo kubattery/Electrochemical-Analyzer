@@ -1,23 +1,25 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js
- * 역할: "Rate / Cycle" 통합 탭의 Cyclability(장기 수명) 하위 뷰 + 뷰 전환 토글
+ * HC-Analyzer  ·  18-cyclability.js   (v3.0.0)
+ * 역할: "Rate / Cycle" 통합 탭 — 실험 종류 자동 판별 → 라우팅 + Cyclability 뷰
  *
- * [설계 메모]
- *  - 데이터 소스는 메인 앱이 voltage profile 을 파싱해 만든 전역 processedCycles 입니다.
- *    (rate capability 와 "같은 데이터"를 다른 관점으로 보는 것)  → 별도 업로드/파서 불필요.
- *  - 표시: 사이클별 방전 비용량(totalDischargeCap). 주 율속 구간 자동 감지(형성/회복 제외)
- *          후 x축을 Cycle 1부터 다시 매겨 표시. 휠 확대/툴팁은 메인 앱 전역 설정을 사용.
- *  - 기존 Rate capability 코드(11/13번 등)는 건드리지 않습니다.
+ * [설계 원칙]
+ *  1. 자동 판별은 "기본 뷰를 정하는 것"까지만 한다. 반대쪽을 잠그지 않는다.
+ *     → 오판해도 사용자가 토글로 즉시 넘어갈 수 있다. 부적합한 쪽엔 경고 배너만.
+ *  2. 사용자가 토글을 직접 누르면 그 선택이 우선(_userView). 데이터셋이 바뀌면 해제.
+ *  3. 데이터 소스는 전역 processedCycles (활성 데이터셋 1개분). 별도 업로드 없음.
  * ============================================================================ */
 
 (function () {
     "use strict";
 
     let chartInstance = null;
-    let _lastKind = null;   // 직전 판별된 실험 종류 (종류 바뀔 때만 자동 전환)
-    const COLOR = "#60a5fa";
+    let _userView = null;        // 사용자가 토글로 고른 뷰 ('rate'|'cycle'|null)
+    let _lastDatasetId = null;   // 데이터셋 전환 감지용
+    let _detect = null;          // 최근 판정 결과
 
-    // DOM (index.html #cycleSubview 내부) — DOMContentLoaded 후 grab
+    const COLOR_CAP = "#60a5fa";
+    const COLOR_CE  = "#34d399";
+
     let canvasEl, metricsEl, detectNoteEl, emptyEl;
     let rcToggle, rateSubview, cycleSubview, btnPng, btnCsv;
 
@@ -33,7 +35,9 @@
         cycleSubview = document.getElementById("cycleSubview");
     }
 
-    // processedCycles → 사이클별 방전 비용량 시계열 [{x: cycleNo, y: mAh/g}]
+    // ==================================================================
+    // 데이터 추출: processedCycles → [{x: 사이클번호, y: 방전용량, ce: 쿨롱효율}]
+    // ==================================================================
     function getSeries() {
         if (typeof processedCycles === "undefined" || !processedCycles) return [];
         const nums = Object.keys(processedCycles).map(Number).sort((a, b) => a - b);
@@ -41,85 +45,156 @@
         nums.forEach(cn => {
             const c = processedCycles[cn];
             if (!c) return;
-            const cap = c.totalDischargeCap;               // 방전 비용량 (cycle life 표준)
-            if (typeof cap === "number" && cap > 0) pts.push({ x: cn, y: cap });
+            const dis = c.totalDischargeCap;
+            if (typeof dis !== "number" || !(dis > 0)) return;
+            const cha = c.totalChargeCap;
+            const ce = (typeof cha === "number" && cha > 0) ? (cha / dis) * 100 : null;
+            pts.push({ x: cn, y: dis, ce: ce });
         });
         return pts;
     }
 
-    // 주 율속 구간 자동 감지: 율속이 바뀌면 용량이 계단처럼 급변하는 성질 이용 → 가장 긴 구간
-    function detectMainSegment(points) {
+    // ==================================================================
+    // 구간 분석: 율속이 바뀌면 용량이 계단처럼 급변한다는 성질 이용
+    //   - segments : 같은 율속으로 묶인 구간들
+    //   - main     : 가장 긴 단일 구간
+    //   - recoveries : 용량이 "다시 올라간" 횟수 (= 초기 율속 복귀 = rate 시험의 강한 신호)
+    // ==================================================================
+    function analyzeSeries(points) {
         const n = points.length;
-        if (n < 4) return { start: 0, end: n - 1 };
-        const diffs = [];
+        if (n < 4) {
+            return { segments: [{ start: 0, end: n - 1 }], main: { start: 0, end: n - 1 }, recoveries: 0 };
+        }
+
+        const rel = [];   // 부호를 유지한 상대 변화율
         for (let i = 1; i < n; i++) {
             const prev = Math.abs(points[i - 1].y) || 1e-9;
-            diffs.push(Math.abs(points[i].y - points[i - 1].y) / prev);
+            rel.push((points[i].y - points[i - 1].y) / prev);
         }
-        const sorted = [...diffs].sort((a, b) => a - b);
-        const median = sorted[Math.floor(sorted.length / 2)] || 0;
-        const threshold = Math.max(0.08, median * 4);
+
+        // 임계값: 노이즈 중앙값의 4배, 최소 4%
+        //   기존 8%는 0.1C→0.2C 같은 작은 단차를 놓쳐 rate 시험을 cycle 로 오판했다.
+        const absSorted = rel.map(Math.abs).sort((a, b) => a - b);
+        const median = absSorted[Math.floor(absSorted.length / 2)] || 0;
+        const threshold = Math.max(0.04, median * 4);
+
         const starts = [0];
-        for (let i = 1; i < n; i++) { if (diffs[i - 1] > threshold) starts.push(i); }
-        starts.push(n);
-        let best = { start: 0, end: n - 1, len: 0 };
-        for (let k = 0; k < starts.length - 1; k++) {
-            const s = starts[k], e = starts[k + 1] - 1, len = e - s + 1;
-            if (len > best.len) best = { start: s, end: e, len };
+        let recoveries = 0;
+        for (let i = 1; i < n; i++) {
+            const d = rel[i - 1];
+            if (Math.abs(d) > threshold) {
+                starts.push(i);
+                if (d > threshold) recoveries++;   // 상승 = 낮은 율속으로 복귀
+            }
         }
-        return { start: best.start, end: best.end };
+        starts.push(n);
+
+        const segments = [];
+        for (let k = 0; k < starts.length - 1; k++) {
+            segments.push({ start: starts[k], end: starts[k + 1] - 1 });
+        }
+        let main = segments[0];
+        segments.forEach(s => {
+            if ((s.end - s.start) > (main.end - main.start)) main = s;
+        });
+
+        return { segments, main, recoveries };
     }
 
-    function isCycleViewActive() {
-        const tab = document.getElementById("tab-rate");
-        return cycleSubview && cycleSubview.style.display !== "none" &&
-               tab && tab.classList.contains("active");
+    // ==================================================================
+    // 실험 종류 판별  →  { kind: 'rate'|'cycle', reason, main, segments }
+    // ==================================================================
+    function detectExperimentKind(points) {
+        const n = points.length;
+        const a = analyzeSeries(points);
+        const mainLen = a.main.end - a.main.start + 1;
+        const ratio = mainLen / n;
+        const segCount = a.segments.length;
+        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio };
+
+        if (n < 8) {
+            return Object.assign({ kind: "rate", reason: `사이클 ${n}개로 판정 근거가 부족해 기본값(Rate)을 적용` }, base);
+        }
+        // ① 용량 복귀 + 다단 계단 → rate 확정 (가장 신뢰도 높은 신호)
+        if (a.recoveries >= 1 && segCount >= 3) {
+            return Object.assign({ kind: "rate", reason: `용량 계단 ${segCount}개 + 초기 율속 복귀 ${a.recoveries}회 감지` }, base);
+        }
+        // ② 단일 율속 구간이 지배적 → cyclability
+        if (ratio >= 0.6 || mainLen >= 30) {
+            return Object.assign({ kind: "cycle", reason: `단일 율속 구간이 ${mainLen}사이클(전체의 ${(ratio * 100).toFixed(0)}%)로 지배적` }, base);
+        }
+        // ③ 계단이 3개 이상 → rate
+        if (segCount >= 3) {
+            return Object.assign({ kind: "rate", reason: `용량 계단 ${segCount}개 감지 (최장 구간 ${mainLen}사이클)` }, base);
+        }
+        // ④ 애매 → 총 사이클 수로 판단
+        const kind = n >= 30 ? "cycle" : "rate";
+        return Object.assign({ kind, reason: `계단 ${segCount}개로 구분이 모호해 총 사이클 수(${n})로 판단` }, base);
     }
 
-    // 실험 종류 자동 판별
-    //  - rate capability: 율속이 여러 번 바뀜 → 단일 율속 구간이 짧다 (계단 여러 개)
-    //  - cyclability: 한 율속으로 길게 → 단일 율속 구간이 매우 길다
-    function detectExperimentKind(series) {
-        const total = series.length;
-        if (total < 12) return "rate";                 // 너무 짧으면 rate 로 간주
-        const m = detectMainSegment(series);
-        const mainLen = m.end - m.start + 1;
-        // 최다 단일 율속 구간이 충분히 길거나(≥15) 전체의 60% 이상이면 장기 사이클링
-        if (mainLen >= 15 || mainLen / total >= 0.6) return "cycle";
-        return "rate";
-    }
-
-    // 상호 배타(잠금) UI: cycle 데이터면 Rate 쪽 잠금, rate 데이터면 Cycle 쪽 잠금
-    function setLock(kind) {
+    // ==================================================================
+    // 경고 배너: 콘텐츠는 절대 숨기지 않고, 부적합한 쪽에 안내만 띄운다
+    // ==================================================================
+    function applyWarn(detect) {
         const rc = document.getElementById("rateContent");
-        const rl = document.getElementById("rateLockedMsg");
         const cc = document.getElementById("cycleContent");
-        const cl = document.getElementById("cycleLockedMsg");
-        const showRate = (kind !== "cycle");   // cycle 데이터일 때만 rate 잠금
-        const showCycle = (kind !== "rate");   // rate 데이터일 때만 cycle 잠금
-        if (rc) rc.style.display = showRate ? "" : "none";
-        if (rl) rl.style.display = showRate ? "none" : "";
-        if (cc) cc.style.display = showCycle ? "" : "none";
-        if (cl) cl.style.display = showCycle ? "none" : "";
+        if (rc) rc.style.display = "";
+        if (cc) cc.style.display = "";
+
+        const rw = document.getElementById("rateLockedMsg");
+        const cw = document.getElementById("cycleLockedMsg");
+        const kind = detect ? detect.kind : null;
+
+        if (rw) {
+            if (kind === "cycle") {
+                rw.innerHTML = `<span class="material-icons-round">info</span><span>이 데이터는 <strong>장기 사이클(Cyclability)</strong>로 감지되었습니다 — ${detect.reason}. 율속 단계 분할이 실제 C-rate 경계와 맞지 않을 수 있습니다.</span>`;
+                rw.style.display = "";
+            } else { rw.style.display = "none"; }
+        }
+        if (cw) {
+            if (kind === "rate") {
+                cw.innerHTML = `<span class="material-icons-round">info</span><span>이 데이터는 <strong>율속(Rate capability)</strong>으로 감지되었습니다 — ${detect.reason}. 아래 곡선은 최장 단일 율속 구간만 잘라 표시하므로 수명 지표로 해석하지 마세요.</span>`;
+                cw.style.display = "";
+            } else { cw.style.display = "none"; }
+        }
     }
 
-    // runAnalysis 등에서 호출: 종류 판별 → 잠금 → (종류 바뀌면) 알맞은 뷰로 자동 전환 → 렌더
+    function currentView() {
+        if (!cycleSubview) return "rate";
+        return cycleSubview.style.display === "none" ? "rate" : "cycle";
+    }
+
+    // runAnalysis 진입점: 판별 → 라우팅 → 렌더
     function applyExperimentKind() {
+        const dsId = (typeof activeDatasetId !== "undefined") ? activeDatasetId : null;
+        if (dsId !== _lastDatasetId) {   // 데이터셋이 바뀌면 수동 선택 해제 → 자동 판정 복귀
+            _lastDatasetId = dsId;
+            _userView = null;
+        }
+
         const series = getSeries();
-        if (!series.length) { setLock(null); _lastKind = null; return; }
-        const kind = detectExperimentKind(series);
-        window.experimentKind = kind;
-        setLock(kind);
-        if (kind !== _lastKind) {
-            _lastKind = kind;
-            showView(kind);                          // 새 데이터 → 알맞은 뷰로 자동 전환
-        } else if (kind === "cycle" && isCycleViewActive()) {
-            renderCyclability();                     // 같은 cycle 데이터 갱신
+        if (!series.length) {
+            _detect = null;
+            window.experimentKind = null;
+            applyWarn(null);
+            if (currentView() === "cycle") renderCyclability();
+            return;
+        }
+
+        _detect = detectExperimentKind(series);
+        window.experimentKind = _detect.kind;
+        applyWarn(_detect);
+
+        const target = _userView || _detect.kind;
+        if (target !== currentView()) {
+            showView(target, false);
+        } else if (target === "cycle") {
+            renderCyclability();
         }
     }
 
     // ==================================================================
-    // 렌더링
+    // Cyclability 렌더링
     // ==================================================================
     function renderCyclability() {
         if (!canvasEl) return;
@@ -134,36 +209,52 @@
         }
         if (emptyEl) emptyEl.style.display = "none";
 
-        const m = detectMainSegment(all);
+        const det = _detect || detectExperimentKind(all);
+        const m = det.main;
         const mainRaw = all.slice(m.start, m.end + 1);
-        // 주 율속 구간만 · Cycle 1부터 재번호 (orig = 원본 사이클 번호, 툴팁용)
         const plotPts = mainRaw.map((p, i) => ({ x: i + 1, y: p.y, orig: p.x }));
+        const cePts = mainRaw
+            .map((p, i) => (p.ce != null ? { x: i + 1, y: p.ce, orig: p.x } : null))
+            .filter(Boolean);
 
         // 감지 안내
         if (detectNoteEl) {
             const head = m.start, tail = all.length - 1 - m.end, mainLen = mainRaw.length;
+            const kindLabel = det.kind === "cycle"
+                ? `<strong style="color:#34d399;">Cyclability 데이터</strong>`
+                : `<strong style="color:#fbbf24;">Rate capability 데이터</strong>`;
+            let html = `판정: ${kindLabel} · <span style="opacity:0.8;">${det.reason}</span><br>`;
             if (head + tail <= 0) {
-                detectNoteEl.innerHTML = `전체 <strong>${mainLen}</strong> 사이클을 Cycle 1부터 표시합니다.`;
+                html += `전체 <strong>${mainLen}</strong> 사이클을 Cycle 1부터 표시합니다.`;
             } else {
-                detectNoteEl.innerHTML =
-                    `주 율속 구간 <strong>${mainLen}</strong> 사이클(원본 Cycle ${all[m.start].x}–${all[m.end].x})을 ` +
-                    `<strong>Cycle 1부터 다시 매겨</strong> 표시합니다. ` +
-                    `<span style="opacity:0.75;">제외: 초기 ${head} · 말기 ${tail} 사이클 (형성/회복 등 다른 율속)</span>`;
+                html += `최장 단일 율속 구간 <strong>${mainLen}</strong> 사이클(원본 Cycle ${all[m.start].x}–${all[m.end].x})을 ` +
+                        `<strong>Cycle 1부터 다시 매겨</strong> 표시합니다. ` +
+                        `<span style="opacity:0.75;">제외: 초기 ${head} · 말기 ${tail} 사이클</span>`;
             }
+            detectNoteEl.innerHTML = html;
             detectNoteEl.style.display = "block";
+        }
+
+        const datasets = [{
+            label: "Discharge Capacity (mAh/g)",
+            data: plotPts, yAxisID: "y",
+            borderColor: COLOR_CAP, backgroundColor: COLOR_CAP, pointBackgroundColor: COLOR_CAP,
+            pointRadius: 3, pointHoverRadius: 6, borderWidth: 1.5, tension: 0, showLine: true
+        }];
+        if (cePts.length) {
+            datasets.push({
+                label: "Coulombic Efficiency (%)",
+                data: cePts, yAxisID: "y1",
+                borderColor: COLOR_CE, backgroundColor: COLOR_CE, pointBackgroundColor: COLOR_CE,
+                pointStyle: "triangle", pointRadius: 3, pointHoverRadius: 6,
+                borderWidth: 1, tension: 0, showLine: true
+            });
         }
 
         if (chartInstance) chartInstance.destroy();
         chartInstance = new Chart(canvasEl.getContext("2d"), {
             type: "line",
-            data: {
-                datasets: [{
-                    label: "Discharge Capacity (mAh/g)",
-                    data: plotPts,
-                    borderColor: COLOR, backgroundColor: COLOR, pointBackgroundColor: COLOR,
-                    pointRadius: 3, pointHoverRadius: 6, borderWidth: 1.5, tension: 0, showLine: true
-                }]
-            },
+            data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
                 interaction: { mode: "nearest", intersect: false },
@@ -174,31 +265,49 @@
                         grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af", precision: 0 }
                     },
                     y: {
+                        position: "left",
                         title: { display: true, text: "Specific Capacity (mAh/g)", color: "#fff", font: { size: 13 } },
                         grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af" }, beginAtZero: true
+                    },
+                    y1: {
+                        position: "right", min: 0, max: 105, display: cePts.length > 0,
+                        title: { display: true, text: "Coulombic Efficiency (%)", color: "#fff", font: { size: 13 } },
+                        grid: { drawOnChartArea: false }, ticks: { color: "#9ca3af" }
                     }
                 },
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: cePts.length > 0, labels: { color: "#e5e7eb", usePointStyle: true, boxWidth: 8 } },
                     tooltip: {
-                        backgroundColor: "rgba(15, 20, 35, 0.95)", borderColor: COLOR, borderWidth: 1,
-                        titleColor: "#fff", bodyColor: "#e5e7eb", padding: 10, displayColors: false,
+                        backgroundColor: "rgba(15, 20, 35, 0.95)", borderColor: COLOR_CAP, borderWidth: 1,
+                        titleColor: "#fff", bodyColor: "#e5e7eb", padding: 10,
                         callbacks: {
                             title: (items) => `Cycle ${items[0].parsed.x}`,
-                            label: (item) => `${item.parsed.y.toFixed(2)} mAh/g`,
-                            afterLabel: (item) => (item.raw && item.raw.orig != null) ? `원본 Cycle ${item.raw.orig}` : ""
+                            label: (item) => item.dataset.yAxisID === "y1"
+                                ? `CE ${item.parsed.y.toFixed(2)} %`
+                                : `${item.parsed.y.toFixed(2)} mAh/g`,
+                            afterLabel: (item) => (item.raw && item.raw.orig != null && item.dataset.yAxisID !== "y1")
+                                ? `원본 Cycle ${item.raw.orig}` : ""
                         }
                     }
                 }
             }
         });
 
+        // 지표 카드
         if (metricsEl) {
             const n = mainRaw.length, first = mainRaw[0], last = mainRaw[n - 1];
+            const retention = first.y > 0 ? (last.y / first.y) * 100 : null;
+            const ceVals = mainRaw.map(p => p.ce).filter(v => v != null);
+            const avgCE = ceVals.length ? ceVals.reduce((s, v) => s + v, 0) / ceVals.length : null;
+            const fade = (retention != null && n > 1) ? (100 - retention) / (n - 1) : null;
+
             const cards = [
                 { label: "사이클 수", value: `${n}`, unit: "cycles" },
                 { label: "초기 용량 (Cyc 1)", value: first.y.toFixed(1), unit: "mAh/g" },
-                { label: "최종 용량 (Cyc " + n + ")", value: last.y.toFixed(1), unit: "mAh/g" }
+                { label: `최종 용량 (Cyc ${n})`, value: last.y.toFixed(1), unit: "mAh/g" },
+                { label: "용량 유지율", value: retention != null ? retention.toFixed(1) : "-", unit: "%" },
+                { label: "사이클당 감쇠율", value: fade != null ? fade.toFixed(3) : "-", unit: "%/cyc" },
+                { label: "평균 쿨롱효율", value: avgCE != null ? avgCE.toFixed(2) : "-", unit: "%" }
             ];
             metricsEl.innerHTML = cards.map(c => `
                 <div class="cyc-metric-card">
@@ -218,14 +327,15 @@
         a.download = "cyclability_cycle.png";
         a.click();
     }
+
     function downloadCsv() {
         const all = getSeries();
         if (!all.length) return;
-        const m = detectMainSegment(all);
-        const pts = all.slice(m.start, m.end + 1);
-        let csv = "Cycle Number,Original Cycle,Specific Capacity (mAh/g)\n";
-        pts.forEach((p, i) => { csv += `${i + 1},${p.x},${p.y}\n`; });
-        const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+        const det = _detect || detectExperimentKind(all);
+        const pts = all.slice(det.main.start, det.main.end + 1);
+        let csv = "Cycle Number,Original Cycle,Specific Capacity (mAh/g),Coulombic Efficiency (%)\n";
+        pts.forEach((p, i) => { csv += `${i + 1},${p.x},${p.y},${p.ce != null ? p.ce : ""}\n`; });
+        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = "cyclability_cycle.csv";
@@ -234,10 +344,12 @@
     }
 
     // ==================================================================
-    // 뷰 전환 토글
+    // 뷰 전환
     // ==================================================================
-    function showView(view) {
+    function showView(view, byUser) {
         if (!rateSubview || !cycleSubview) return;
+        if (byUser) _userView = view;
+
         const isCycle = view === "cycle";
         rateSubview.style.display = isCycle ? "none" : "";
         cycleSubview.style.display = isCycle ? "" : "none";
@@ -246,7 +358,7 @@
                 b.classList.toggle("active", b.dataset.view === view));
         }
         if (isCycle) {
-            if (window.experimentKind !== "rate") renderCyclability();  // rate 데이터면 잠금 메시지만 표시
+            renderCyclability();   // 판정이 rate 여도 렌더한다 (수동 오버라이드 허용)
             if (chartInstance) setTimeout(() => chartInstance.resize(), 30);
         } else if (typeof triggerChartResize === "function") {
             setTimeout(triggerChartResize, 30);
@@ -257,14 +369,12 @@
         grabDom();
         if (rcToggle) {
             rcToggle.querySelectorAll(".rc-toggle-btn").forEach(btn =>
-                btn.addEventListener("click", () => showView(btn.dataset.view)));
+                btn.addEventListener("click", () => showView(btn.dataset.view, true)));
         }
         if (btnPng) btnPng.addEventListener("click", downloadPng);
         if (btnCsv) btnCsv.addEventListener("click", downloadCsv);
     }
 
-    // runAnalysis 에서 호출되는 진입점 (이름 호환 유지):
-    // 실험 종류 판별 → 알맞은 뷰로 자동 라우팅 + 반대쪽 잠금 + 렌더
     window.refreshCyclabilityIfActive = function () {
         applyExperimentKind();
     };

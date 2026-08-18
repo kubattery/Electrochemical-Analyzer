@@ -521,7 +521,11 @@ function renderRateCapabilityCharts(opts = {}) {
         }
     ];
  
-      datasetsForCycles.forEach(ds => {
+    // Cyclability(장기 사이클)로 판별된 데이터셋은 rate 차트에서 제외 (18-cyclability.js 판별 사용)
+    const rateKindDatasets = datasetsForCycles.filter(ds =>
+        !(typeof isCycleKindDataset === 'function' && isCycleKindDataset(ds)));
+
+      rateKindDatasets.forEach(ds => {
         const cycleNumbers = Object.keys(ds.processedCycles).map(Number).sort((a, b) => a - b);
         const trace = [];
         const pointColors = [];
@@ -566,7 +570,7 @@ function renderRateCapabilityCharts(opts = {}) {
  
     // 사이클 레이블: 모든 데이터셋의 합집합 (중복 제거)
     const allCycleNums = [...new Set(
-        datasetsForCycles.flatMap(ds => Object.keys(ds.processedCycles).map(Number))
+        rateKindDatasets.flatMap(ds => Object.keys(ds.processedCycles).map(Number))
     )].sort((a, b) => a - b);
  
     const rateCyclesInstance = new Chart(ctxCycles, {
@@ -603,8 +607,10 @@ function renderRateCapabilityCharts(opts = {}) {
  
     let summaryDatasets;
     if (isCompareMode) {
-        // 데이터셋마다 하나씩 구동바 (grouped bar)
-        summaryDatasets = checkedDS.map(ds => {
+        // 데이터셋마다 하나씩 구동바 (grouped bar) — cycle 로 판별된 셋은 제외
+        summaryDatasets = checkedDS.filter(ds =>
+            !(typeof isCycleKindDataset === 'function' && isCycleKindDataset(ds))
+        ).map(ds => {
             if (!ds || !ds.processedCycles) return { label: (ds ? ds.customName : ''), data: [] };
             const summary = buildRateSummaryForDataset(ds.processedCycles);
             return {
@@ -713,5 +719,3 @@ function buildRateSummaryForDataset(targetProcessedCycles) {
     }
     return summary;
 }
-
-

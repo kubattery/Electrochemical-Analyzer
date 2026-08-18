@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  19-experiment-detector.js   (v1.0.0)
+ * HC-Analyzer  ·  19-experiment-detector.js   (v2.0.0)
  * 역할: 실험 종류(rate / cycle) 자동 판별 전담 모듈
  *
  * [주의] 클래식 스크립트 방식입니다. index.html 에서 반드시 13-charts.js 와
@@ -12,9 +12,8 @@
  *  2. 데이터가 몇 개든 데이터셋 단위로 각각 판별한다.
  *     - rate  로 판별 → Rate Capability 차트 전용
  *     - cycle 로 판별 → Cyclability 차트 전용
- *  3. 판별 원리: 율속 시험은 용량이 계단(step)처럼 급변하고 마지막에 초기
- *     율속으로 복귀(recovery)하지만, 장기 사이클 시험은 하나의 율속 구간이
- *     전체를 지배하며 완만하게 감쇠한다.
+ *  3. 판별 기준(사용자 지정): 총 사이클 수 > 50 → cycle(Cyclability),
+ *     50 이하 → rate(Rate Capability). 임계값은 CYCLE_THRESHOLD 상수로 조정.
  *
  * [전역 API]  window.ExperimentDetector
  *  - seriesFromProcessed(pc)      : processedCycles → [{x,y,ce}] 시계열
@@ -99,32 +98,22 @@
     // ==================================================================
     // 실험 종류 판별  →  { kind: 'rate'|'cycle', reason, main, segments, ... }
     // ==================================================================
+    // [판별 기준 — 사용자 지정 규칙]
+    //   총 사이클 수가 50을 넘으면 cycle(Cyclability), 50 이하면 rate(Rate Capability)
+    const CYCLE_THRESHOLD = 50;
+
     function detectExperimentKind(points) {
         const n = points.length;
-        const a = analyzeSeries(points);
+        const a = analyzeSeries(points);   // main 구간은 형성 사이클 제외 표시용으로만 사용
         const mainLen = a.main.end - a.main.start + 1;
         const ratio = mainLen / n;
         const segCount = a.segments.length;
         const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio };
 
-        if (n < 8) {
-            return Object.assign({ kind: "rate", reason: `사이클 ${n}개로 판정 근거가 부족해 기본값(Rate)을 적용` }, base);
+        if (n > CYCLE_THRESHOLD) {
+            return Object.assign({ kind: "cycle", reason: `총 ${n}사이클 > ${CYCLE_THRESHOLD}사이클 → Cyclability` }, base);
         }
-        // ① 용량 복귀 + 다단 계단 → rate 확정 (가장 신뢰도 높은 신호)
-        if (a.recoveries >= 1 && segCount >= 3) {
-            return Object.assign({ kind: "rate", reason: `용량 계단 ${segCount}개 + 초기 율속 복귀 ${a.recoveries}회 감지` }, base);
-        }
-        // ② 단일 율속 구간이 지배적 → cyclability
-        if (ratio >= 0.6 || mainLen >= 30) {
-            return Object.assign({ kind: "cycle", reason: `단일 율속 구간이 ${mainLen}사이클(전체의 ${(ratio * 100).toFixed(0)}%)로 지배적` }, base);
-        }
-        // ③ 계단이 3개 이상 → rate
-        if (segCount >= 3) {
-            return Object.assign({ kind: "rate", reason: `용량 계단 ${segCount}개 감지 (최장 구간 ${mainLen}사이클)` }, base);
-        }
-        // ④ 애매 → 총 사이클 수로 판단
-        const kind = n >= 30 ? "cycle" : "rate";
-        return Object.assign({ kind, reason: `계단 ${segCount}개로 구분이 모호해 총 사이클 수(${n})로 판단` }, base);
+        return Object.assign({ kind: "rate", reason: `총 ${n}사이클 ≤ ${CYCLE_THRESHOLD}사이클 → Rate Capability` }, base);
     }
 
     // 판별 실행 (cacheKey 가 있으면 유효 사이클 수 기준으로 캐시 재사용)

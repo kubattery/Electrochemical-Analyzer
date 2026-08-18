@@ -259,6 +259,9 @@ function initTabs() {
                 if (tabId === 'tab-dqdv') {
                     updateDqDvView();
                 }
+                if (tabId === 'tab-cycle' && typeof resizeCyclabilityChart === 'function') {
+                    resizeCyclabilityChart();
+                }
             }, 100);
         });
     });
@@ -271,4 +274,3 @@ function triggerChartResize() {
     if (chartRateSummaryInstance) chartRateSummaryInstance.resize();
     if (chartDqDvInstance) chartDqDvInstance.resize();
 }
-

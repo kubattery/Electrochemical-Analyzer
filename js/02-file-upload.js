@@ -82,8 +82,8 @@ function onQueueFileParsed(filename) {
     parseNextFileInQueue();
 }
 
-// 엑셀 시트 내 데이터 필수 컬럼 존재 여부 체크
-function checkHasHeaders(jsonData) {
+// 엑셀 시트에서 헤더 행을 찾아 { idx: 행 번호, key: 헤더 내용 서명 } 반환. 없으면 null.
+function findHeaderRowInfo(jsonData) {
     for (let i = 0; i < Math.min(20, jsonData.length); i++) {
         const row = jsonData[i];
         if (!row || !Array.isArray(row)) continue;
@@ -100,14 +100,41 @@ function checkHasHeaders(jsonData) {
                 if (lowerCell.includes('capacity') || lowerCell.includes('용량') || lowerCell.includes('cap') || lowerCell.includes('|q|')) hasCapacity = true;
             }
         });
-        if (hasTime && hasStep && hasVoltage) {
-            return true;
-        }
-        if (hasVoltage && hasCapacity) {
-            return true;
+        if ((hasTime && hasStep && hasVoltage) || (hasVoltage && hasCapacity)) {
+            return {
+                idx: i,
+                key: row.map(c => String(c === undefined || c === null ? '' : c).trim().toLowerCase()).join('|')
+            };
         }
     }
-    return false;
+    return null;
+}
+
+// 엑셀 시트 내 데이터 필수 컬럼 존재 여부 체크
+function checkHasHeaders(jsonData) {
+    return findHeaderRowInfo(jsonData) !== null;
+}
+
+// [연속 시트 병합] 엑셀 시트당 행 수 제한(약 104만)으로 데이터가
+// "데이터_1_1", "데이터_1_2"처럼 여러 시트에 나뉜 경우, 기준 시트와
+// 같은 헤더를 가진 나머지 시트의 데이터 행을 순서대로 이어 붙인다.
+function mergeContinuationSheets(workbook, baseJson, baseName) {
+    const baseInfo = findHeaderRowInfo(baseJson);
+    if (!baseInfo) return baseJson;
+    workbook.SheetNames.forEach(name => {
+        if (name === baseName) return;
+        const ws = workbook.Sheets[name];
+        if (!ws) return;
+        const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (!json || json.length < 2) return;
+        const info = findHeaderRowInfo(json);
+        if (!info || info.key !== baseInfo.key) return;
+        for (let r = info.idx + 1; r < json.length; r++) {
+            baseJson.push(json[r]);
+        }
+        console.log(`연속 데이터 시트 병합: ${name} (${json.length - info.idx - 1}행 추가)`);
+    });
+    return baseJson;
 }
 
 // ============================================================================
@@ -135,7 +162,7 @@ function getXlsxWorker() {
     if (_xlsxWorkerBroken) return null;
     if (_xlsxWorker) return _xlsxWorker;
     try {
-        _xlsxWorker = new Worker('js/xlsx-worker.js?v=4.0.0');
+        _xlsxWorker = new Worker('js/xlsx-worker.js?v=4.1.0');
         _xlsxWorker.onmessage = (ev) => {
             const res = ev.data;
             const job = _xlsxActiveJob;
@@ -207,15 +234,18 @@ function parseExcelFileQueuedMainThread(file) {
             });
             const searchOrder = [...preferredSheets, ...workbook.SheetNames.filter(n => !preferredSheets.includes(n))];
             let targetJsonData = null;
+            let baseSheetName = null;
             for (const sheetName of searchOrder) {
                 const ws = workbook.Sheets[sheetName];
                 if (!ws) continue;
                 const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
                 if (json && json.length >= 2 && checkHasHeaders(json)) {
-                    targetJsonData = json; break;
+                    targetJsonData = json; baseSheetName = sheetName; break;
                 }
             }
-            if (!targetJsonData) {
+            if (targetJsonData) {
+                targetJsonData = mergeContinuationSheets(workbook, targetJsonData, baseSheetName);
+            } else {
                 targetJsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
             }
             const parsedOk = parseExcelData(targetJsonData, file.name);

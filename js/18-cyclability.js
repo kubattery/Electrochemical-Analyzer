@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js   (v4.1.0)
+ * HC-Analyzer  ·  18-cyclability.js   (v4.2.0)
  * 역할: "Cyclability" 독립 탭 — cycle 로 판별된 데이터셋들의 수명 차트 + 지표
  *
  * [주의] 판별 로직은 19-experiment-detector.js 전담입니다. 이 파일은
@@ -124,9 +124,11 @@
         cycleEntries.forEach(entry => {
             const all = d.seriesFromProcessed(entry.ds.processedCycles);
             const det = entry.det;
-            // 형성(formation) 사이클만 제외하고 끝까지 전부 표시 — 데이터마다 길이 유동적
+            // 초반 형성(formation)·스파이크와 말기 미완료 사이클만 제외하고 전부 표시
+            // — 데이터마다 길이 유동적
             const cut = det.formationCut || 0;
-            const mainRaw = all.slice(cut);
+            const tail = det.trailingCut || 0;
+            const mainRaw = all.slice(cut, all.length - tail);
             const color = entry.ds.lineColor || entry.ds.color || COLOR_CAP;
             const name = entry.ds.customName || entry.ds.dataName || "Dataset";
             maxLen = Math.max(maxLen, mainRaw.length);
@@ -162,8 +164,11 @@
 
             // 감지 안내 라인
             let line = `<strong style="color:${color};">${name}</strong> — ${det.reason}`;
-            if (cut > 0) {
-                line += ` · 형성(formation) 사이클 ${cut}개 제외, 이후 ${mainRaw.length}사이클(원본 Cycle ${all[cut].x}–${all[all.length - 1].x})을 Cycle 1부터 재번호해 끝까지 표시`;
+            if (cut > 0 || tail > 0) {
+                const parts = [];
+                if (cut > 0) parts.push(`초반 형성/비정상 ${cut}개`);
+                if (tail > 0) parts.push(`말기 미완료 ${tail}개`);
+                line += ` · ${parts.join("·")} 제외, ${mainRaw.length}사이클(원본 Cycle ${mainRaw[0].x}–${mainRaw[mainRaw.length - 1].x})을 Cycle 1부터 재번호해 표시`;
             } else {
                 line += ` · 전체 ${mainRaw.length}사이클 표시`;
             }
@@ -312,7 +317,9 @@
         let csv = "Dataset,Cycle Number,Original Cycle,Specific Capacity (mAh/g),Coulombic Efficiency (%)\n";
         cycleEntries.forEach(entry => {
             const all = d.seriesFromProcessed(entry.ds.processedCycles);
-            const pts = all.slice(entry.det.formationCut || 0);   // 형성 제외 후 끝까지
+            const cut = entry.det.formationCut || 0;
+            const tail = entry.det.trailingCut || 0;
+            const pts = all.slice(cut, all.length - tail);   // 차트와 동일한 구간
             const name = (entry.ds.customName || "Dataset").replace(/,/g, " ");
             pts.forEach((p, i) => { csv += `${name},${i + 1},${p.x},${p.y},${p.ce != null ? p.ce : ""}\n`; });
         });

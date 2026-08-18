@@ -1961,13 +1961,16 @@ select option {
 
 .combined-rate-subgrid .chart-container { height: 280px; }
 
-/* Rate Capability 카드만 3칸(=6등분 중 3칸 = 절반 = 일반 카드의 1.5배) 폭으로 */
+/* Rate Capability·Cyclability 카드는 3칸(=6등분 중 3칸 = 절반 = 일반 카드의 1.5배) 폭으로 */
 .combined-card[data-chart="rate"] { grid-column: span 3; }
+.combined-card[data-chart="cycle"] { grid-column: span 3; }
+.combined-card[data-chart="cycle"] .chart-container { height: 280px; }
 
 @media (max-width: 720px) {
     .combined-grid { grid-template-columns: 1fr; }
     .combined-rate-subgrid { grid-template-columns: 1fr; }
     /* 좁은 화면에서는 모든 카드를 한 칸으로 (넘침 방지) */
     .combined-card,
-    .combined-card[data-chart="rate"] { grid-column: auto; }
+    .combined-card[data-chart="rate"],
+    .combined-card[data-chart="cycle"] { grid-column: auto; }
 }

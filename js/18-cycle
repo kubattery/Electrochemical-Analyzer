@@ -1,25 +1,26 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js   (v3.2.0)
- * 역할: "Cyclability" 독립 탭 — 데이터셋별 실험 종류 자동 판별 → 종류별 차트 분배
+ * HC-Analyzer  ·  18-cyclability.js   (v4.0.0)
+ * 역할: "Cyclability" 독립 탭 — cycle 로 판별된 데이터셋들의 수명 차트 + 지표
+ *
+ * [주의] 판별 로직은 19-experiment-detector.js 전담입니다. 이 파일은
+ *        판별 결과(ExperimentDetector)를 소비만 합니다.
+ *        index.html 로드 순서: 19-experiment-detector.js → 18-cyclability.js
  *
  * [설계 원칙]
  *  1. Rate Capability / Cyclability 는 상단 탭에서 각각 독립적으로 진입한다.
- *  2. 표시 대상 데이터셋(비교 체크 ≥2개면 체크된 것들, 아니면 활성 1개)을
- *     각각 자동 판별하여:
- *     - rate  로 판별된 데이터셋 → Rate Capability 차트에만 표시
- *     - cycle 로 판별된 데이터셋 → Cyclability 차트에만 표시
- *     (13-charts.js 의 rate 차트가 isCycleKindDataset() 으로 cycle 셋을 제외)
- *  3. 표시 대상이 전부 한쪽 종류면 반대쪽 탭은 잠금 메시지를 표시한다.
- *  4. Cyclability 차트: X=Cycle Number, Y=Specific Capacity(방전).
- *     각 데이터셋의 최장 단일 율속 구간(형성 사이클 제외)을 Cycle 1부터 다시
- *     매겨 겹쳐 그린다. 색·이름은 데이터셋 고유값(lineColor/customName) 사용.
+ *  2. 표시 대상 데이터셋을 각각 판별(19번)하여:
+ *     - rate  로 판별된 셋 → Rate Capability 차트에만 (13-charts.js 가 cycle 셋 제외)
+ *     - cycle 로 판별된 셋 → 이 탭의 Cyclability 차트에만
+ *     표시 대상이 전부 한쪽 종류면 반대쪽 탭은 잠금 메시지를 표시한다.
+ *  3. 차트 형식은 Rate Capability 의 사이클 라인 차트와 동일:
+ *     X=Cycle Number, Y=Specific Capacity (mAh/g), 데이터셋 고유 색·이름 사용.
+ *     각 데이터셋의 최장 단일 율속 구간(형성 사이클 제외)을 Cycle 1부터 재번호.
  * ============================================================================ */
 
 (function () {
     "use strict";
 
     let chartInstance = null;
-    const _kindCache = {};       // 데이터셋 id → { n: 사이클 수, det: 판정 결과 }
 
     const COLOR_CAP = "#60a5fa";
     const COLOR_CE  = "#34d399";
@@ -40,142 +41,9 @@
         cycleLockedEl  = document.getElementById("cycleLockedMsg");
     }
 
-    // ==================================================================
-    // 데이터 추출: processedCycles 객체 → [{x: 사이클번호, y: 방전용량, ce: 쿨롱효율}]
-    // ==================================================================
-    function seriesFromProcessed(pc) {
-        if (!pc) return [];
-        const nums = Object.keys(pc).map(Number).sort((a, b) => a - b);
-        const pts = [];
-        nums.forEach(cn => {
-            const c = pc[cn];
-            if (!c) return;
-            const dis = c.totalDischargeCap;
-            if (typeof dis !== "number" || !(dis > 0)) return;
-            const cha = c.totalChargeCap;
-            const ce = (typeof cha === "number" && cha > 0) ? (cha / dis) * 100 : null;
-            pts.push({ x: cn, y: dis, ce: ce });
-        });
-        return pts;
+    function detector() {
+        return (typeof window.ExperimentDetector !== "undefined") ? window.ExperimentDetector : null;
     }
-
-    // ==================================================================
-    // 구간 분석: 율속이 바뀌면 용량이 계단처럼 급변한다는 성질 이용
-    //   - segments : 같은 율속으로 묶인 구간들
-    //   - main     : 가장 긴 단일 구간
-    //   - recoveries : 용량이 "다시 올라간" 횟수 (= 초기 율속 복귀 = rate 시험의 강한 신호)
-    // ==================================================================
-    function analyzeSeries(points) {
-        const n = points.length;
-        if (n < 4) {
-            return { segments: [{ start: 0, end: n - 1 }], main: { start: 0, end: n - 1 }, recoveries: 0 };
-        }
-
-        const rel = [];   // 부호를 유지한 상대 변화율
-        for (let i = 1; i < n; i++) {
-            const prev = Math.abs(points[i - 1].y) || 1e-9;
-            rel.push((points[i].y - points[i - 1].y) / prev);
-        }
-
-        // 임계값: 노이즈 중앙값의 4배, 최소 4%
-        //   기존 8%는 0.1C→0.2C 같은 작은 단차를 놓쳐 rate 시험을 cycle 로 오판했다.
-        const absSorted = rel.map(Math.abs).sort((a, b) => a - b);
-        const median = absSorted[Math.floor(absSorted.length / 2)] || 0;
-        const threshold = Math.max(0.04, median * 4);
-
-        const starts = [0];
-        let recoveries = 0;
-        for (let i = 1; i < n; i++) {
-            const d = rel[i - 1];
-            if (Math.abs(d) > threshold) {
-                starts.push(i);
-                if (d > threshold) recoveries++;   // 상승 = 낮은 율속으로 복귀
-            }
-        }
-        starts.push(n);
-
-        const segments = [];
-        for (let k = 0; k < starts.length - 1; k++) {
-            segments.push({ start: starts[k], end: starts[k + 1] - 1 });
-        }
-        let main = segments[0];
-        segments.forEach(s => {
-            if ((s.end - s.start) > (main.end - main.start)) main = s;
-        });
-
-        return { segments, main, recoveries };
-    }
-
-    // ==================================================================
-    // 실험 종류 판별  →  { kind: 'rate'|'cycle', reason, main, segments }
-    // ==================================================================
-    function detectExperimentKind(points) {
-        const n = points.length;
-        const a = analyzeSeries(points);
-        const mainLen = a.main.end - a.main.start + 1;
-        const ratio = mainLen / n;
-        const segCount = a.segments.length;
-        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio };
-
-        if (n < 8) {
-            return Object.assign({ kind: "rate", reason: `사이클 ${n}개로 판정 근거가 부족해 기본값(Rate)을 적용` }, base);
-        }
-        // ① 용량 복귀 + 다단 계단 → rate 확정 (가장 신뢰도 높은 신호)
-        if (a.recoveries >= 1 && segCount >= 3) {
-            return Object.assign({ kind: "rate", reason: `용량 계단 ${segCount}개 + 초기 율속 복귀 ${a.recoveries}회 감지` }, base);
-        }
-        // ② 단일 율속 구간이 지배적 → cyclability
-        if (ratio >= 0.6 || mainLen >= 30) {
-            return Object.assign({ kind: "cycle", reason: `단일 율속 구간이 ${mainLen}사이클(전체의 ${(ratio * 100).toFixed(0)}%)로 지배적` }, base);
-        }
-        // ③ 계단이 3개 이상 → rate
-        if (segCount >= 3) {
-            return Object.assign({ kind: "rate", reason: `용량 계단 ${segCount}개 감지 (최장 구간 ${mainLen}사이클)` }, base);
-        }
-        // ④ 애매 → 총 사이클 수로 판단
-        const kind = n >= 30 ? "cycle" : "rate";
-        return Object.assign({ kind, reason: `계단 ${segCount}개로 구분이 모호해 총 사이클 수(${n})로 판단` }, base);
-    }
-
-    // 데이터셋 1개 판별 (id 가 있으면 사이클 수 기준으로 캐시)
-    function classify(pc, cacheKey) {
-        const series = seriesFromProcessed(pc);
-        if (!series.length) return null;
-        if (cacheKey && _kindCache[cacheKey] && _kindCache[cacheKey].n === series.length) {
-            return _kindCache[cacheKey].det;
-        }
-        const det = detectExperimentKind(series);
-        if (cacheKey) _kindCache[cacheKey] = { n: series.length, det };
-        return det;
-    }
-
-    // ==================================================================
-    // 표시 대상 데이터셋: rate 차트(13-charts.js)와 동일한 규칙
-    //   비교 체크 ≥2개 → 체크된 것들 / 아니면 활성 데이터셋 1개
-    // ==================================================================
-    function getDisplayDatasets() {
-        const checked = (typeof getCheckedDatasets === "function") ? getCheckedDatasets() : [];
-        if (checked.length >= 2) return checked.filter(ds => ds && ds.processedCycles);
-
-        if (typeof processedCycles !== "undefined" && processedCycles && Object.keys(processedCycles).length) {
-            const activeDs = (typeof datasetLibrary !== "undefined" && typeof activeDatasetId !== "undefined" && activeDatasetId)
-                ? datasetLibrary.find(d => d.id === activeDatasetId) : null;
-            return [{
-                id: activeDs ? activeDs.id : "_active",
-                customName: activeDs ? (activeDs.customName || activeDs.dataName) : "Active",
-                lineColor: (activeDs && activeDs.lineColor) ? activeDs.lineColor : COLOR_CAP,
-                processedCycles: processedCycles
-            }];
-        }
-        return [];
-    }
-
-    // 13-charts.js 의 rate 차트가 cycle 데이터셋을 제외할 때 사용하는 전역 헬퍼
-    window.isCycleKindDataset = function (ds) {
-        if (!ds || !ds.processedCycles) return false;
-        const det = classify(ds.processedCycles, ds.id);
-        return !!det && det.kind === "cycle";
-    };
 
     // ==================================================================
     // 탭별 잠금 라우팅: 표시 대상이 전부 한쪽 종류면 반대쪽 탭 잠금
@@ -210,18 +78,17 @@
         }
     }
 
-    // runAnalysis / 탭 진입 시 진입점: 데이터셋별 판별 → 라우팅 → 렌더
+    // runAnalysis / 탭 진입 시 진입점: 판별 결과 조회 → 라우팅 → 렌더
     function applyExperimentKind() {
-        const display = getDisplayDatasets();
-        const entries = display
-            .map(ds => ({ ds, det: classify(ds.processedCycles, ds.id) }))
-            .filter(e => e.det);
+        const d = detector();
+        if (!d) return;
 
+        const entries = d.classifyDisplayDatasets();
         const cycleEntries = entries.filter(e => e.det.kind === "cycle");
         const rateEntries  = entries.filter(e => e.det.kind === "rate");
 
         // 활성 데이터셋 기준 판정 결과를 전역으로 노출 (다른 모듈 참고용)
-        const activeDet = (typeof processedCycles !== "undefined") ? classify(processedCycles, null) : null;
+        const activeDet = (typeof processedCycles !== "undefined") ? d.detect(processedCycles, null) : null;
         window.experimentKind = activeDet ? activeDet.kind : null;
 
         applyRouting(rateEntries.length, cycleEntries.length, entries.length);
@@ -229,13 +96,14 @@
     }
 
     // ==================================================================
-    // Cyclability 렌더링 — cycle 로 판별된 데이터셋들을 겹쳐 그린다
-    //   X=Cycle Number(주 구간을 1부터 재번호), Y=Specific Capacity(방전)
+    // Cyclability 렌더링 — Rate Capability 사이클 라인 차트와 같은 형식
+    //   (labels = Cycle Number, 데이터셋별 trace, 고유 색·이름)
     // ==================================================================
     function renderCyclability(cycleEntries) {
         if (!canvasEl) return;
+        const d = detector();
 
-        if (!cycleEntries || !cycleEntries.length) {
+        if (!d || !cycleEntries || !cycleEntries.length) {
             if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
             if (emptyEl) emptyEl.style.display = "block";
             if (metricsEl) metricsEl.innerHTML = "";
@@ -244,38 +112,48 @@
         }
         if (emptyEl) emptyEl.style.display = "none";
 
+        const isCompareMode = cycleEntries.length >= 2;
         const showCE = cycleEntries.length === 1;   // CE 축은 단일 데이터셋일 때만 (겹침 방지)
+
         const chartDatasets = [];
         const noteLines = [];
         const metricRows = [];
+        let maxLen = 0;
 
         cycleEntries.forEach(entry => {
-            const all = seriesFromProcessed(entry.ds.processedCycles);
+            const all = d.seriesFromProcessed(entry.ds.processedCycles);
             const det = entry.det;
             const m = det.main;
             const mainRaw = all.slice(m.start, m.end + 1);
-            const color = entry.ds.lineColor || COLOR_CAP;
+            const color = entry.ds.lineColor || entry.ds.color || COLOR_CAP;
             const name = entry.ds.customName || entry.ds.dataName || "Dataset";
+            maxLen = Math.max(maxLen, mainRaw.length);
 
+            // rate 차트(13-charts.js)와 동일한 trace 방식: labels 인덱스에 값 배열
             chartDatasets.push({
                 label: name,
-                data: mainRaw.map((p, i) => ({ x: i + 1, y: p.y, orig: p.x })),
+                data: mainRaw.map(p => p.y),
+                origCycles: mainRaw.map(p => p.x),   // 툴팁용 원본 사이클 번호
                 yAxisID: "y",
-                borderColor: color, backgroundColor: color, pointBackgroundColor: color,
-                pointRadius: 3, pointHoverRadius: 6, borderWidth: 1.5, tension: 0, showLine: true
+                borderColor: color,
+                backgroundColor: color,
+                pointBackgroundColor: color,
+                pointBorderColor: color,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                borderWidth: isCompareMode ? 2 : 1.5,
+                tension: 0.1
             });
 
             if (showCE) {
-                const cePts = mainRaw
-                    .map((p, i) => (p.ce != null ? { x: i + 1, y: p.ce, orig: p.x } : null))
-                    .filter(Boolean);
-                if (cePts.length) {
+                const ceTrace = mainRaw.map(p => (p.ce != null ? p.ce : null));
+                if (ceTrace.some(v => v != null)) {
                     chartDatasets.push({
                         label: "Coulombic Efficiency (%)",
-                        data: cePts, yAxisID: "y1",
+                        data: ceTrace, yAxisID: "y1",
                         borderColor: COLOR_CE, backgroundColor: COLOR_CE, pointBackgroundColor: COLOR_CE,
                         pointStyle: "triangle", pointRadius: 3, pointHoverRadius: 6,
-                        borderWidth: 1, tension: 0, showLine: true
+                        borderWidth: 1, tension: 0
                     });
                 }
             }
@@ -304,47 +182,54 @@
             detectNoteEl.style.display = "block";
         }
 
-        const hasCE = showCE && chartDatasets.some(d => d.yAxisID === "y1");
+        // labels: Cycle 1 ~ 최장 데이터셋 길이 (rate 차트의 합집합 라벨과 같은 개념)
+        const labels = Array.from({ length: maxLen }, (_, i) => i + 1);
+        const hasCE = showCE && chartDatasets.some(ds => ds.yAxisID === "y1");
 
         if (chartInstance) chartInstance.destroy();
         chartInstance = new Chart(canvasEl.getContext("2d"), {
             type: "line",
-            data: { datasets: chartDatasets },
+            data: { labels, datasets: chartDatasets },
             options: {
-                responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 300 },
                 interaction: { mode: "nearest", intersect: false },
                 scales: {
                     x: {
-                        type: "linear",
-                        title: { display: true, text: "Cycle Number", color: "#fff", font: { size: 13 } },
-                        grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af", precision: 0 }
+                        title: { display: true, text: "Cycle Number", color: "#fff" },
+                        grid: { color: "rgba(255,255,255,0.05)" },
+                        ticks: { color: "#9ca3af" }
                     },
                     y: {
-                        position: "left",
-                        title: { display: true, text: "Specific Capacity (mAh/g)", color: "#fff", font: { size: 13 } },
-                        grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af" }, beginAtZero: true
+                        title: { display: true, text: "Specific Capacity (mAh/g)", color: "#fff" },
+                        grid: { color: "rgba(255,255,255,0.05)" },
+                        ticks: { color: "#9ca3af" }
                     },
                     y1: {
                         position: "right", min: 0, max: 105, display: hasCE,
-                        title: { display: true, text: "Coulombic Efficiency (%)", color: "#fff", font: { size: 13 } },
+                        title: { display: true, text: "Coulombic Efficiency (%)", color: "#fff" },
                         grid: { drawOnChartArea: false }, ticks: { color: "#9ca3af" }
                     }
                 },
                 plugins: {
                     legend: {
-                        display: cycleEntries.length > 1 || hasCE,
-                        labels: { color: "#e5e7eb", usePointStyle: true, boxWidth: 8 }
+                        display: isCompareMode || hasCE,
+                        labels: { color: "#fff", boxWidth: 14, padding: 10 }
                     },
                     tooltip: {
                         backgroundColor: "rgba(15, 20, 35, 0.95)", borderColor: COLOR_CAP, borderWidth: 1,
                         titleColor: "#fff", bodyColor: "#e5e7eb", padding: 10,
                         callbacks: {
-                            title: (items) => `Cycle ${items[0].parsed.x}`,
+                            title: (items) => `Cycle ${items[0].label}`,
                             label: (item) => item.dataset.yAxisID === "y1"
                                 ? `CE ${item.parsed.y.toFixed(2)} %`
                                 : `${item.dataset.label}: ${item.parsed.y.toFixed(2)} mAh/g`,
-                            afterLabel: (item) => (item.raw && item.raw.orig != null && item.dataset.yAxisID !== "y1")
-                                ? `원본 Cycle ${item.raw.orig}` : ""
+                            afterLabel: (item) => {
+                                const oc = item.dataset.origCycles;
+                                return (oc && oc[item.dataIndex] != null && item.dataset.yAxisID !== "y1")
+                                    ? `원본 Cycle ${oc[item.dataIndex]}` : "";
+                            }
                         }
                     }
                 }
@@ -418,15 +303,14 @@
     }
 
     function downloadCsv() {
-        const display = getDisplayDatasets();
-        const cycleEntries = display
-            .map(ds => ({ ds, det: classify(ds.processedCycles, ds.id) }))
-            .filter(e => e.det && e.det.kind === "cycle");
+        const d = detector();
+        if (!d) return;
+        const cycleEntries = d.classifyDisplayDatasets().filter(e => e.det.kind === "cycle");
         if (!cycleEntries.length) return;
 
         let csv = "Dataset,Cycle Number,Original Cycle,Specific Capacity (mAh/g),Coulombic Efficiency (%)\n";
         cycleEntries.forEach(entry => {
-            const all = seriesFromProcessed(entry.ds.processedCycles);
+            const all = d.seriesFromProcessed(entry.ds.processedCycles);
             const m = entry.det.main;
             const pts = all.slice(m.start, m.end + 1);
             const name = (entry.ds.customName || "Dataset").replace(/,/g, " ");

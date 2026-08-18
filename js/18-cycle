@@ -1,11 +1,12 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js   (v3.0.0)
- * 역할: "Rate / Cycle" 통합 탭 — 실험 종류 자동 판별 → 라우팅 + Cyclability 뷰
+ * HC-Analyzer  ·  18-cyclability.js   (v3.1.0)
+ * 역할: "Cyclability" 독립 탭 — 실험 종류 자동 판별 → 탭별 잠금 + Cyclability 뷰
  *
  * [설계 원칙]
- *  1. 자동 판별은 "기본 뷰를 정하는 것"까지만 한다. 반대쪽을 잠그지 않는다.
- *     → 오판해도 사용자가 토글로 즉시 넘어갈 수 있다. 부적합한 쪽엔 경고 배너만.
- *  2. 사용자가 토글을 직접 누르면 그 선택이 우선(_userView). 데이터셋이 바뀌면 해제.
+ *  1. Rate Capability / Cyclability 는 상단 탭에서 각각 독립적으로 진입한다.
+ *  2. 데이터 업로드 시 실험 종류를 자동 판별하여:
+ *     - rate  데이터 → Cyclability 탭은 그래프를 표시하지 않고 잠금 메시지만 표시
+ *     - cycle 데이터 → Rate Capability 탭은 그래프를 표시하지 않고 잠금 메시지만 표시
  *  3. 데이터 소스는 전역 processedCycles (활성 데이터셋 1개분). 별도 업로드 없음.
  * ============================================================================ */
 
@@ -13,26 +14,25 @@
     "use strict";
 
     let chartInstance = null;
-    let _userView = null;        // 사용자가 토글로 고른 뷰 ('rate'|'cycle'|null)
-    let _lastDatasetId = null;   // 데이터셋 전환 감지용
     let _detect = null;          // 최근 판정 결과
 
     const COLOR_CAP = "#60a5fa";
     const COLOR_CE  = "#34d399";
 
     let canvasEl, metricsEl, detectNoteEl, emptyEl;
-    let rcToggle, rateSubview, cycleSubview, btnPng, btnCsv;
+    let rateContentEl, cycleContentEl, rateLockedEl, cycleLockedEl, btnPng, btnCsv;
 
     function grabDom() {
-        canvasEl     = document.getElementById("cycChart");
-        metricsEl    = document.getElementById("cycMetrics");
-        detectNoteEl = document.getElementById("cycDetectNote");
-        emptyEl      = document.getElementById("cycEmpty");
-        btnPng       = document.getElementById("cycBtnPng");
-        btnCsv       = document.getElementById("cycBtnCsv");
-        rcToggle     = document.getElementById("rcToggle");
-        rateSubview  = document.getElementById("rateSubview");
-        cycleSubview = document.getElementById("cycleSubview");
+        canvasEl       = document.getElementById("cycChart");
+        metricsEl      = document.getElementById("cycMetrics");
+        detectNoteEl   = document.getElementById("cycDetectNote");
+        emptyEl        = document.getElementById("cycEmpty");
+        btnPng         = document.getElementById("cycBtnPng");
+        btnCsv         = document.getElementById("cycBtnCsv");
+        rateContentEl  = document.getElementById("rateContent");
+        cycleContentEl = document.getElementById("cycleContent");
+        rateLockedEl   = document.getElementById("rateLockedMsg");
+        cycleLockedEl  = document.getElementById("cycleLockedMsg");
     }
 
     // ==================================================================
@@ -133,68 +133,67 @@
     }
 
     // ==================================================================
-    // 경고 배너: 콘텐츠는 절대 숨기지 않고, 부적합한 쪽에 안내만 띄운다
+    // 탭별 잠금 라우팅: 판별 결과와 맞지 않는 탭은 그래프 대신 잠금 메시지 표시
     // ==================================================================
-    function applyWarn(detect) {
-        const rc = document.getElementById("rateContent");
-        const cc = document.getElementById("cycleContent");
-        if (rc) rc.style.display = "";
-        if (cc) cc.style.display = "";
-
-        const rw = document.getElementById("rateLockedMsg");
-        const cw = document.getElementById("cycleLockedMsg");
+    function applyRouting(detect) {
         const kind = detect ? detect.kind : null;
 
-        if (rw) {
+        // Rate Capability 탭: cycle 데이터면 잠금
+        if (rateContentEl && rateLockedEl) {
             if (kind === "cycle") {
-                rw.innerHTML = `<span class="material-icons-round">info</span><span>이 데이터는 <strong>장기 사이클(Cyclability)</strong>로 감지되었습니다 — ${detect.reason}. 율속 단계 분할이 실제 C-rate 경계와 맞지 않을 수 있습니다.</span>`;
-                rw.style.display = "";
-            } else { rw.style.display = "none"; }
+                rateContentEl.style.display = "none";
+                rateLockedEl.innerHTML =
+                    `이 데이터는 <strong>장기 사이클(Cyclability)</strong> 데이터로 감지되었습니다.<br>` +
+                    `<span style="font-size:13px; opacity:0.85;">${detect.reason}</span><br>` +
+                    `상단의 <strong>Cyclability</strong> 탭에서 분석 결과를 확인하세요.`;
+                rateLockedEl.style.display = "";
+            } else {
+                rateContentEl.style.display = "";
+                rateLockedEl.style.display = "none";
+            }
         }
-        if (cw) {
+
+        // Cyclability 탭: rate 데이터면 잠금
+        if (cycleContentEl && cycleLockedEl) {
             if (kind === "rate") {
-                cw.innerHTML = `<span class="material-icons-round">info</span><span>이 데이터는 <strong>율속(Rate capability)</strong>으로 감지되었습니다 — ${detect.reason}. 아래 곡선은 최장 단일 율속 구간만 잘라 표시하므로 수명 지표로 해석하지 마세요.</span>`;
-                cw.style.display = "";
-            } else { cw.style.display = "none"; }
+                cycleContentEl.style.display = "none";
+                cycleLockedEl.innerHTML =
+                    `이 데이터는 <strong>율속(Rate capability)</strong> 데이터로 감지되었습니다.<br>` +
+                    `<span style="font-size:13px; opacity:0.85;">${detect.reason}</span><br>` +
+                    `상단의 <strong>Rate Capability</strong> 탭에서 분석 결과를 확인하세요.`;
+                cycleLockedEl.style.display = "";
+            } else {
+                cycleContentEl.style.display = "";
+                cycleLockedEl.style.display = "none";
+            }
         }
     }
 
-    function currentView() {
-        if (!cycleSubview) return "rate";
-        return cycleSubview.style.display === "none" ? "rate" : "cycle";
-    }
-
-    // runAnalysis 진입점: 판별 → 라우팅 → 렌더
+    // runAnalysis / 탭 진입 시 진입점: 판별 → 잠금 라우팅 → 렌더
     function applyExperimentKind() {
-        const dsId = (typeof activeDatasetId !== "undefined") ? activeDatasetId : null;
-        if (dsId !== _lastDatasetId) {   // 데이터셋이 바뀌면 수동 선택 해제 → 자동 판정 복귀
-            _lastDatasetId = dsId;
-            _userView = null;
-        }
-
         const series = getSeries();
         if (!series.length) {
             _detect = null;
             window.experimentKind = null;
-            applyWarn(null);
-            if (currentView() === "cycle") renderCyclability();
+            applyRouting(null);
+            renderCyclability();   // 빈 상태 안내 표시
             return;
         }
 
         _detect = detectExperimentKind(series);
         window.experimentKind = _detect.kind;
-        applyWarn(_detect);
+        applyRouting(_detect);
 
-        const target = _userView || _detect.kind;
-        if (target !== currentView()) {
-            showView(target, false);
-        } else if (target === "cycle") {
+        if (_detect.kind === "cycle") {
             renderCyclability();
+        } else if (chartInstance) {
+            chartInstance.destroy();   // rate 데이터로 전환되면 기존 cycle 차트 제거
+            chartInstance = null;
         }
     }
 
     // ==================================================================
-    // Cyclability 렌더링
+    // Cyclability 렌더링 (kind === 'cycle' 인 데이터만 도달)
     // ==================================================================
     function renderCyclability() {
         if (!canvasEl) return;
@@ -220,10 +219,7 @@
         // 감지 안내
         if (detectNoteEl) {
             const head = m.start, tail = all.length - 1 - m.end, mainLen = mainRaw.length;
-            const kindLabel = det.kind === "cycle"
-                ? `<strong style="color:#34d399;">Cyclability 데이터</strong>`
-                : `<strong style="color:#fbbf24;">Rate capability 데이터</strong>`;
-            let html = `판정: ${kindLabel} · <span style="opacity:0.8;">${det.reason}</span><br>`;
+            let html = `판정: <strong style="color:#34d399;">Cyclability 데이터</strong> · <span style="opacity:0.8;">${det.reason}</span><br>`;
             if (head + tail <= 0) {
                 html += `전체 <strong>${mainLen}</strong> 사이클을 Cycle 1부터 표시합니다.`;
             } else {
@@ -343,40 +339,19 @@
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
 
-    // ==================================================================
-    // 뷰 전환
-    // ==================================================================
-    function showView(view, byUser) {
-        if (!rateSubview || !cycleSubview) return;
-        if (byUser) _userView = view;
-
-        const isCycle = view === "cycle";
-        rateSubview.style.display = isCycle ? "none" : "";
-        cycleSubview.style.display = isCycle ? "" : "none";
-        if (rcToggle) {
-            rcToggle.querySelectorAll(".rc-toggle-btn").forEach(b =>
-                b.classList.toggle("active", b.dataset.view === view));
-        }
-        if (isCycle) {
-            renderCyclability();   // 판정이 rate 여도 렌더한다 (수동 오버라이드 허용)
-            if (chartInstance) setTimeout(() => chartInstance.resize(), 30);
-        } else if (typeof triggerChartResize === "function") {
-            setTimeout(triggerChartResize, 30);
-        }
-    }
-
     function init() {
         grabDom();
-        if (rcToggle) {
-            rcToggle.querySelectorAll(".rc-toggle-btn").forEach(btn =>
-                btn.addEventListener("click", () => showView(btn.dataset.view, true)));
-        }
         if (btnPng) btnPng.addEventListener("click", downloadPng);
         if (btnCsv) btnCsv.addEventListener("click", downloadCsv);
     }
 
     window.refreshCyclabilityIfActive = function () {
         applyExperimentKind();
+    };
+
+    // Cyclability 탭 진입 시 차트 리사이즈 (탭이 숨겨진 상태에서 렌더된 경우 대비)
+    window.resizeCyclabilityChart = function () {
+        if (chartInstance) chartInstance.resize();
     };
 
     document.addEventListener("DOMContentLoaded", init);

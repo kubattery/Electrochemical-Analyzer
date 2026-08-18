@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  19-experiment-detector.js   (v2.2.0)
+ * HC-Analyzer  ·  19-experiment-detector.js   (v2.3.0)
  * 역할: 실험 종류(rate / cycle) 자동 판별 전담 모듈
  *
  * [주의] 클래식 스크립트 방식입니다. index.html 에서 반드시 13-charts.js 와
@@ -30,7 +30,11 @@
     const _cache = {};   // 데이터셋 id → { n: 유효 사이클 수, det: 판정 결과 }
 
     // ==================================================================
-    // 데이터 추출: processedCycles 객체 → [{x: 사이클번호, y: 방전용량, ce: 쿨롱효율}]
+    // 데이터 추출: processedCycles 객체 → [{x: 사이클번호, y: 용량, ce: 쿨롱효율}]
+    //   y = 탈소듐화(desodiation, 충전) 용량 = 가역 용량.
+    //   음극 반쪽전지 수명 그래프의 표준이며, 측정 SW(스마트인터페이스)가
+    //   내보내는 사이클별 용량 값과 일치한다. (소듐화 용량은 CE만큼 커서
+    //   실제 값과 ~0.1% 어긋났음.) 탈소듐화가 없는 사이클만 소듐화로 대체.
     // ==================================================================
     function seriesFromProcessed(pc) {
         if (!pc) return [];
@@ -39,11 +43,12 @@
         nums.forEach(cn => {
             const c = pc[cn];
             if (!c) return;
-            const dis = c.totalDischargeCap;
-            if (typeof dis !== "number" || !(dis > 0)) return;
-            const cha = c.totalChargeCap;
-            const ce = (typeof cha === "number" && cha > 0) ? (cha / dis) * 100 : null;
-            pts.push({ x: cn, y: dis, ce: ce });
+            const dis = (typeof c.totalDischargeCap === "number" && c.totalDischargeCap > 0) ? c.totalDischargeCap : null;
+            const cha = (typeof c.totalChargeCap === "number" && c.totalChargeCap > 0) ? c.totalChargeCap : null;
+            const y = (cha != null) ? cha : dis;
+            if (y == null) return;
+            const ce = (cha != null && dis != null) ? (cha / dis) * 100 : null;
+            pts.push({ x: cn, y: y, ce: ce });
         });
         return pts;
     }
@@ -129,26 +134,18 @@
         for (let i = 0; i < main.start; i++) {
             if (points[i].y <= ref * 1.05) return 0;
         }
-        return main.start;
-    }
 
-    // ==================================================================
-    // 말기 미완료 사이클 감지: 측정이 도중에 중단되면 마지막 1~2 사이클의
-    // 용량이 직전 대비 급락한다. 직전 5사이클 중앙값의 60% 미만인 끝점만
-    // (최대 3개까지) 제외. 점진적 용량 감쇠는 절대 걸리지 않는 조건이다.
-    //   - 반환값: 제외할 말기 포인트 개수
-    // ==================================================================
-    function detectTrailingCut(points) {
-        const n = points.length;
-        let end = n - 1, dropped = 0;
-        while (end > 5 && dropped < 3) {
+        // 형성 직후의 "전이 사이클"까지 흡수: 뒤따르는 10사이클 중앙값보다
+        // 3% 이상 높은 동안 잘라나간다 (정상 감쇠는 사이클당 <1%라 안 걸림)
+        let cut = main.start;
+        while (cut < Math.min(limit, n - 10)) {
             const win = [];
-            for (let k = Math.max(0, end - 5); k < end; k++) win.push(points[k].y);
+            for (let k = cut + 1; k <= Math.min(cut + 10, n - 1); k++) win.push(points[k].y);
             win.sort((a, b) => a - b);
             const med = win[Math.floor(win.length / 2)];
-            if (points[end].y < med * 0.6) { end--; dropped++; } else break;
+            if (points[cut].y > med * 1.03) cut++; else break;
         }
-        return n - 1 - end;
+        return cut;
     }
 
     function detectExperimentKind(points) {
@@ -158,8 +155,8 @@
         const ratio = mainLen / n;
         const segCount = a.segments.length;
         const formationCut = detectFormationCut(points, a);
-        const trailingCut = detectTrailingCut(points);
-        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio, formationCut, trailingCut };
+        // 형성 사이클 이후는 마지막 사이클까지 전부 표시한다 (말기 제외 없음)
+        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio, formationCut, trailingCut: 0 };
 
         if (n > CYCLE_THRESHOLD) {
             return Object.assign({ kind: "cycle", reason: `총 ${n}사이클 > ${CYCLE_THRESHOLD}사이클 → Cyclability` }, base);

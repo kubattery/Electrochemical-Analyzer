@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js   (v4.2.0)
+ * HC-Analyzer  ·  18-cyclability.js   (v4.3.0)
  * 역할: "Cyclability" 독립 탭 — cycle 로 판별된 데이터셋들의 수명 차트 + 지표
  *
  * [주의] 판별 로직은 19-experiment-detector.js 전담입니다. 이 파일은
@@ -331,6 +331,68 @@
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
+
+    // ==================================================================
+    // "데이터 한눈에 보기" 통합 뷰용: 지정 캔버스에 Cyclability 차트만 렌더
+    //   - 잠금/지표/안내문 없이 차트만 그린다
+    //   - cycle 데이터가 하나도 없으면 빈 축만 있는 차트를 표시 (rate 전용
+    //     데이터여도 칸은 유지)
+    // ==================================================================
+    window.renderCyclabilityCombined = function (opts) {
+        const canvas = document.getElementById(opts.canvasId);
+        if (!canvas) return;
+        const d = detector();
+        const cycleEntries = d
+            ? d.classifyDisplayDatasets().filter(e => e.det.kind === "cycle")
+            : [];
+
+        const isCompareMode = cycleEntries.length >= 2;
+        const chartDatasets = [];
+        let maxLen = 0;
+
+        cycleEntries.forEach(entry => {
+            const all = d.seriesFromProcessed(entry.ds.processedCycles);
+            const cut = entry.det.formationCut || 0;
+            const mainRaw = all.slice(cut);
+            const color = entry.ds.lineColor || entry.ds.color || COLOR_CAP;
+            maxLen = Math.max(maxLen, mainRaw.length);
+            chartDatasets.push({
+                label: entry.ds.customName || entry.ds.dataName || "Dataset",
+                data: mainRaw.map(p => p.y),
+                borderColor: color, backgroundColor: color,
+                pointBackgroundColor: color, pointBorderColor: color,
+                pointRadius: 3, pointHoverRadius: 6,
+                borderWidth: isCompareMode ? 2 : 1.5, tension: 0.1
+            });
+        });
+
+        const labels = Array.from({ length: maxLen }, (_, i) => i + 1);
+
+        const prev = opts.getInstance ? opts.getInstance() : null;
+        if (prev) { try { prev.destroy(); } catch (e) { /* 이미 파괴됨 */ } }
+
+        const inst = new Chart(canvas.getContext("2d"), {
+            type: "line",
+            data: { labels, datasets: chartDatasets },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+                scales: {
+                    x: {
+                        title: { display: true, text: "Cycle Number", color: "#fff" },
+                        grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af" }
+                    },
+                    y: {
+                        title: { display: true, text: "Specific Capacity (mAh/g)", color: "#fff" },
+                        grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#9ca3af" }
+                    }
+                },
+                plugins: {
+                    legend: { display: isCompareMode, labels: { color: "#fff", boxWidth: 14, padding: 10 } }
+                }
+            }
+        });
+        if (opts.setInstance) opts.setInstance(inst);
+    };
 
     function init() {
         grabDom();

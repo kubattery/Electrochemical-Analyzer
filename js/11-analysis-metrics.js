@@ -10,6 +10,10 @@
    3. Electrochemical Analysis Calculations
    ========================================== */
 function runAnalysis() {
+    // [선행 판별] 피팅·차트 렌더 전에 실험 종류(rate/cycle)를 데이터셋별로 먼저 판별
+    // (19-experiment-detector.js — 이후 rate 차트/Cyclability 탭이 이 결과를 사용)
+    if (typeof classifyDisplayDatasets === 'function') classifyDisplayDatasets();
+
     // 항상 targetCycleSP 기준의 cycleData를 획득하여 Slope/Plateau 차트에 전달
     const spCycleNum = parseInt(targetCycleSP.value) || 1;
     const spCycleData = processedCycles[spCycleNum];

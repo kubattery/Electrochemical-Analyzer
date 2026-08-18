@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  19-experiment-detector.js   (v2.1.0)
+ * HC-Analyzer  ·  19-experiment-detector.js   (v2.2.0)
  * 역할: 실험 종류(rate / cycle) 자동 판별 전담 모듈
  *
  * [주의] 클래식 스크립트 방식입니다. index.html 에서 반드시 13-charts.js 와
@@ -103,30 +103,52 @@
     const CYCLE_THRESHOLD = 50;
 
     // ==================================================================
-    // 형성(formation) 사이클 감지: 초반의 유독 용량이 높은 선두 구간만 제외 대상
-    //   - 첫 번째 구간(segments[0])이 짧고(전체의 20% 이하, 최대 10사이클),
-    //     바로 다음 구간보다 평균 용량이 높을 때만 형성 구간으로 판단
-    //   - 반환값: 본 데이터가 시작되는 인덱스 (형성 구간 없으면 0)
-    //   ※ 이 인덱스 "이후는 끝까지 전부" 표시한다. 중간에 노이즈로 구간이
-    //     끊겨도 뒷부분이 잘리지 않도록 최장 구간 방식은 쓰지 않는다.
+    // 형성(formation)·비정상 초반 사이클 감지
+    //   - 가장 긴 안정 구간(main)이 데이터 초반(최대 15사이클, 전체의 20% 이내)
+    //     에서 시작하고, 그 앞의 사이클들이 "전부" 안정 구간 초입 평균보다
+    //     유의미하게(5% 이상) 높을 때만 → 그 앞부분(형성 + 스파이크)을 제외
+    //   - 반환값: 본 데이터가 시작되는 인덱스 (제외할 것 없으면 0)
+    //   ※ 여기서 자른 뒤로는 "끝까지 전부" 표시한다. 중간 노이즈로 뒷부분이
+    //     잘리지 않도록 최장 구간의 끝(end)은 사용하지 않는다.
     // ==================================================================
     function detectFormationCut(points, analysis) {
         const n = points.length;
-        const segs = analysis.segments;
-        if (segs.length < 2) return 0;
+        const main = analysis.main;
+        if (!main || main.start === 0) return 0;
 
-        const seg0 = segs[0];
-        const seg0Len = seg0.end - seg0.start + 1;
-        const maxFormation = Math.min(10, Math.max(1, Math.floor(n * 0.2)));
-        if (seg0Len > maxFormation) return 0;
+        const limit = Math.min(15, Math.floor(n * 0.2));
+        if (main.start > limit) return 0;
 
-        const avg = (s) => {
-            let sum = 0;
-            for (let i = s.start; i <= s.end; i++) sum += points[i].y;
-            return sum / (s.end - s.start + 1);
-        };
-        // 형성 사이클은 본 사이클보다 용량이 높다 (활성화·SEI 형성 때문)
-        return avg(seg0) > avg(segs[1]) ? seg0.end + 1 : 0;
+        // 안정 구간 초입(최대 10사이클)의 평균 = 본 사이클 기준 용량
+        const refEnd = Math.min(main.start + 9, main.end);
+        let sum = 0, cnt = 0;
+        for (let i = main.start; i <= refEnd; i++) { sum += points[i].y; cnt++; }
+        const ref = sum / cnt;
+
+        // 앞쪽 사이클(형성/스파이크)이 전부 기준보다 높아야만 제외 (애매하면 안 자름)
+        for (let i = 0; i < main.start; i++) {
+            if (points[i].y <= ref * 1.05) return 0;
+        }
+        return main.start;
+    }
+
+    // ==================================================================
+    // 말기 미완료 사이클 감지: 측정이 도중에 중단되면 마지막 1~2 사이클의
+    // 용량이 직전 대비 급락한다. 직전 5사이클 중앙값의 60% 미만인 끝점만
+    // (최대 3개까지) 제외. 점진적 용량 감쇠는 절대 걸리지 않는 조건이다.
+    //   - 반환값: 제외할 말기 포인트 개수
+    // ==================================================================
+    function detectTrailingCut(points) {
+        const n = points.length;
+        let end = n - 1, dropped = 0;
+        while (end > 5 && dropped < 3) {
+            const win = [];
+            for (let k = Math.max(0, end - 5); k < end; k++) win.push(points[k].y);
+            win.sort((a, b) => a - b);
+            const med = win[Math.floor(win.length / 2)];
+            if (points[end].y < med * 0.6) { end--; dropped++; } else break;
+        }
+        return n - 1 - end;
     }
 
     function detectExperimentKind(points) {
@@ -136,7 +158,8 @@
         const ratio = mainLen / n;
         const segCount = a.segments.length;
         const formationCut = detectFormationCut(points, a);
-        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio, formationCut };
+        const trailingCut = detectTrailingCut(points);
+        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio, formationCut, trailingCut };
 
         if (n > CYCLE_THRESHOLD) {
             return Object.assign({ kind: "cycle", reason: `총 ${n}사이클 > ${CYCLE_THRESHOLD}사이클 → Cyclability` }, base);

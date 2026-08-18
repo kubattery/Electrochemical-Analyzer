@@ -304,7 +304,11 @@ function calculateRateCapability() {
     if (!thead || !tbody) return;
 
     const checkedDS = getCheckedDatasets();
-    const displayDS = checkedDS.length > 0 ? checkedDS : datasetLibrary.filter(d => d.id === activeDatasetId);
+    let displayDS = checkedDS.length > 0 ? checkedDS : datasetLibrary.filter(d => d.id === activeDatasetId);
+
+    // Cyclability(장기 사이클)로 판별된 데이터셋은 율속 요약 테이블에서 제외
+    displayDS = displayDS.filter(ds =>
+        !(typeof isCycleKindDataset === 'function' && isCycleKindDataset(ds)));
 
     if (displayDS.length === 0) {
         thead.innerHTML = "";

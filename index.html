@@ -726,6 +726,10 @@
                             <input type="checkbox" class="combined-chart-toggle" data-chart="rate" checked>
                             <span>Rate Capability</span>
                         </label>
+                        <label class="combined-check">
+                            <input type="checkbox" class="combined-chart-toggle" data-chart="cycle" checked>
+                            <span>Cyclability</span>
+                        </label>
                     </div>
 
                     <p class="combined-empty-msg" id="combinedEmptyMsg" style="display: none;"></p>
@@ -773,6 +777,16 @@
                                 <div class="chart-container">
                                     <canvas id="combinedChartRateSummary"></canvas>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Cyclability (cycle 데이터가 없어도 빈 그래프 틀 표시) -->
+                        <div class="dashboard-chart-card combined-card" data-chart="cycle">
+                            <div class="card-header">
+                                <h3 class="chart-title">Cyclability (Cycle Number vs. Specific Capacity)</h3>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="combinedChartCycle"></canvas>
                             </div>
                         </div>
                     </div>
@@ -856,8 +870,8 @@
     <script src="js/13-charts.js?v=3.0.0"></script>
     <script src="js/14-export.js?v=3.0.0"></script>
     <script src="js/15-profile-cycles.js?v=3.0.0"></script>
-    <script src="js/16-combined-view.js?v=1.0.0"></script>
+    <script src="js/16-combined-view.js?v=1.1.0"></script>
     <script src="js/17-cv.js?v=4.0.0"></script>
-    <script src="js/18-cyclability.js?v=4.2.0"></script>
+    <script src="js/18-cyclability.js?v=4.3.0"></script>
 </body>
 </html>

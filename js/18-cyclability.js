@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js   (v4.0.0)
+ * HC-Analyzer  ·  18-cyclability.js   (v4.1.0)
  * 역할: "Cyclability" 독립 탭 — cycle 로 판별된 데이터셋들의 수명 차트 + 지표
  *
  * [주의] 판별 로직은 19-experiment-detector.js 전담입니다. 이 파일은
@@ -14,7 +14,8 @@
  *     표시 대상이 전부 한쪽 종류면 반대쪽 탭은 잠금 메시지를 표시한다.
  *  3. 차트 형식은 Rate Capability 의 사이클 라인 차트와 동일:
  *     X=Cycle Number, Y=Specific Capacity (mAh/g), 데이터셋 고유 색·이름 사용.
- *     각 데이터셋의 최장 단일 율속 구간(형성 사이클 제외)을 Cycle 1부터 재번호.
+ *     초반 형성(formation) 사이클만 제외하고 "끝까지 전부" Cycle 1부터 재번호.
+ *     (데이터마다 총 사이클 수가 달라도 각자 길이에 맞게 유동 표시)
  * ============================================================================ */
 
 (function () {
@@ -123,8 +124,9 @@
         cycleEntries.forEach(entry => {
             const all = d.seriesFromProcessed(entry.ds.processedCycles);
             const det = entry.det;
-            const m = det.main;
-            const mainRaw = all.slice(m.start, m.end + 1);
+            // 형성(formation) 사이클만 제외하고 끝까지 전부 표시 — 데이터마다 길이 유동적
+            const cut = det.formationCut || 0;
+            const mainRaw = all.slice(cut);
             const color = entry.ds.lineColor || entry.ds.color || COLOR_CAP;
             const name = entry.ds.customName || entry.ds.dataName || "Dataset";
             maxLen = Math.max(maxLen, mainRaw.length);
@@ -159,10 +161,9 @@
             }
 
             // 감지 안내 라인
-            const head = m.start, tail = all.length - 1 - m.end;
             let line = `<strong style="color:${color};">${name}</strong> — ${det.reason}`;
-            if (head + tail > 0) {
-                line += ` · 주 구간 ${mainRaw.length}사이클(원본 Cycle ${all[m.start].x}–${all[m.end].x})을 Cycle 1부터 재번호, 제외: 초기 ${head}·말기 ${tail}`;
+            if (cut > 0) {
+                line += ` · 형성(formation) 사이클 ${cut}개 제외, 이후 ${mainRaw.length}사이클(원본 Cycle ${all[cut].x}–${all[all.length - 1].x})을 Cycle 1부터 재번호해 끝까지 표시`;
             } else {
                 line += ` · 전체 ${mainRaw.length}사이클 표시`;
             }
@@ -311,8 +312,7 @@
         let csv = "Dataset,Cycle Number,Original Cycle,Specific Capacity (mAh/g),Coulombic Efficiency (%)\n";
         cycleEntries.forEach(entry => {
             const all = d.seriesFromProcessed(entry.ds.processedCycles);
-            const m = entry.det.main;
-            const pts = all.slice(m.start, m.end + 1);
+            const pts = all.slice(entry.det.formationCut || 0);   // 형성 제외 후 끝까지
             const name = (entry.ds.customName || "Dataset").replace(/,/g, " ");
             pts.forEach((p, i) => { csv += `${name},${i + 1},${p.x},${p.y},${p.ce != null ? p.ce : ""}\n`; });
         });

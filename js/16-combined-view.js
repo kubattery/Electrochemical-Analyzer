@@ -20,7 +20,8 @@ const combinedChartInstances = {
     slope: null,
     rateCycles: null,
     rateSummary: null,
-    dqdv: null
+    dqdv: null,
+    cycle: null
 };
 
 /**
@@ -45,7 +46,7 @@ function isCombinedTabActive() {
  * 체크박스 상태를 { profile, slope, rate, dqdv } 형태로 반환합니다.
  */
 function getCombinedSelectedCharts() {
-    const selection = { profile: false, slope: false, rate: false, dqdv: false };
+    const selection = { profile: false, slope: false, rate: false, dqdv: false, cycle: false };
     document.querySelectorAll('.combined-chart-toggle').forEach(cb => {
         const key = cb.getAttribute('data-chart');
         if (key in selection) selection[key] = cb.checked;
@@ -69,7 +70,7 @@ function renderCombinedView() {
 
     // 1) 활성 데이터가 없는 경우: 모든 카드 숨김 + 안내 메시지
     if (typeof hasActiveDataset === 'function' && !hasActiveDataset()) {
-        ['profile', 'slope', 'rateCycles', 'rateSummary', 'dqdv'].forEach(destroyCombinedChart);
+        ['profile', 'slope', 'rateCycles', 'rateSummary', 'dqdv', 'cycle'].forEach(destroyCombinedChart);
         cards.forEach(card => { card.style.display = 'none'; });
         if (emptyMsg) {
             emptyMsg.textContent = '분석할 데이터가 없습니다. 데이터를 업로드하거나 라이브러리에서 데이터셋을 활성화해 주세요.';
@@ -79,9 +80,9 @@ function renderCombinedView() {
     }
 
     // 2) 선택된 그래프가 하나도 없는 경우: 안내 메시지
-    const anySelected = selection.profile || selection.slope || selection.rate || selection.dqdv;
+    const anySelected = selection.profile || selection.slope || selection.rate || selection.dqdv || selection.cycle;
     if (!anySelected) {
-        ['profile', 'slope', 'rateCycles', 'rateSummary', 'dqdv'].forEach(destroyCombinedChart);
+        ['profile', 'slope', 'rateCycles', 'rateSummary', 'dqdv', 'cycle'].forEach(destroyCombinedChart);
         cards.forEach(card => { card.style.display = 'none'; });
         if (emptyMsg) {
             emptyMsg.textContent = '위에서 표시할 그래프를 하나 이상 선택하세요.';
@@ -149,6 +150,23 @@ function renderCombinedView() {
     } else {
         destroyCombinedChart('rateCycles');
         destroyCombinedChart('rateSummary');
+    }
+
+    // 6.5) Cyclability (cycle 데이터가 없어도 빈 차트 틀을 표시)
+    if (selection.cycle) {
+        try {
+            if (typeof renderCyclabilityCombined === 'function') {
+                renderCyclabilityCombined({
+                    canvasId: 'combinedChartCycle',
+                    getInstance: () => combinedChartInstances.cycle,
+                    setInstance: (inst) => { combinedChartInstances.cycle = inst; }
+                });
+            }
+        } catch (e) {
+            console.error('[통합 뷰] Cyclability 렌더 오류:', e);
+        }
+    } else {
+        destroyCombinedChart('cycle');
     }
 
     // 7) dQ/dV (통합 뷰에서는 차트만, 피크 요약 테이블 갱신은 생략)

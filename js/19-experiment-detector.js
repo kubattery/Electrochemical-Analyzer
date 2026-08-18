@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  19-experiment-detector.js   (v2.0.0)
+ * HC-Analyzer  ·  19-experiment-detector.js   (v2.1.0)
  * 역할: 실험 종류(rate / cycle) 자동 판별 전담 모듈
  *
  * [주의] 클래식 스크립트 방식입니다. index.html 에서 반드시 13-charts.js 와
@@ -102,13 +102,41 @@
     //   총 사이클 수가 50을 넘으면 cycle(Cyclability), 50 이하면 rate(Rate Capability)
     const CYCLE_THRESHOLD = 50;
 
+    // ==================================================================
+    // 형성(formation) 사이클 감지: 초반의 유독 용량이 높은 선두 구간만 제외 대상
+    //   - 첫 번째 구간(segments[0])이 짧고(전체의 20% 이하, 최대 10사이클),
+    //     바로 다음 구간보다 평균 용량이 높을 때만 형성 구간으로 판단
+    //   - 반환값: 본 데이터가 시작되는 인덱스 (형성 구간 없으면 0)
+    //   ※ 이 인덱스 "이후는 끝까지 전부" 표시한다. 중간에 노이즈로 구간이
+    //     끊겨도 뒷부분이 잘리지 않도록 최장 구간 방식은 쓰지 않는다.
+    // ==================================================================
+    function detectFormationCut(points, analysis) {
+        const n = points.length;
+        const segs = analysis.segments;
+        if (segs.length < 2) return 0;
+
+        const seg0 = segs[0];
+        const seg0Len = seg0.end - seg0.start + 1;
+        const maxFormation = Math.min(10, Math.max(1, Math.floor(n * 0.2)));
+        if (seg0Len > maxFormation) return 0;
+
+        const avg = (s) => {
+            let sum = 0;
+            for (let i = s.start; i <= s.end; i++) sum += points[i].y;
+            return sum / (s.end - s.start + 1);
+        };
+        // 형성 사이클은 본 사이클보다 용량이 높다 (활성화·SEI 형성 때문)
+        return avg(seg0) > avg(segs[1]) ? seg0.end + 1 : 0;
+    }
+
     function detectExperimentKind(points) {
         const n = points.length;
-        const a = analyzeSeries(points);   // main 구간은 형성 사이클 제외 표시용으로만 사용
+        const a = analyzeSeries(points);
         const mainLen = a.main.end - a.main.start + 1;
         const ratio = mainLen / n;
         const segCount = a.segments.length;
-        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio };
+        const formationCut = detectFormationCut(points, a);
+        const base = { main: a.main, segments: a.segments, mainLen, segCount, ratio, formationCut };
 
         if (n > CYCLE_THRESHOLD) {
             return Object.assign({ kind: "cycle", reason: `총 ${n}사이클 > ${CYCLE_THRESHOLD}사이클 → Cyclability` }, base);

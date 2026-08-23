@@ -182,9 +182,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 데이터셋 초기 로드 완료 후 칩 UI 생성
     renderCycleChipsUI();
 
-    // 프로젝트, 업데이트, 데모 모드, 필터 초기화
+    // 프로젝트, 데모 모드, 필터 초기화
     initProjectManagement();
-    initDataUpdate();
     initDemoMode();
     initLibraryFilterChips();
 

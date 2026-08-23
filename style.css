@@ -1738,17 +1738,6 @@ select option {
     color: #fff;
 }
 
-/* 6. 수동 업로드 접이식 보정 */
-.manual-upload-accordion summary::-webkit-details-marker {
-    display: none;
-}
-.manual-upload-accordion[open] summary span.material-icons-round {
-    transform: rotate(180deg);
-}
-.manual-upload-accordion summary span.material-icons-round {
-    transition: transform 0.2s ease;
-}
-
 /* 7. 데이터 라이브러리 아코디언 그룹화 스타일 */
 .sample-group-container {
     margin-bottom: 12px;

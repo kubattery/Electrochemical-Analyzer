@@ -137,46 +137,11 @@
 
             <!-- File Update Card -->
             <div class="sidebar-card upload-card" id="dataUpdateCard">
-                <h2 class="card-title"><span class="material-icons-round icon-align">sync</span> 데이터 업데이트</h2>
-                
-                <!-- Project Selection & Management -->
-                <div class="project-config-group" style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; color: var(--text-muted); font-weight: 500; display: block; margin-bottom: 6px;">프로젝트 선택</label>
-                    <div style="display: flex; gap: 6px; align-items: center;">
-                        <select id="projectSelect" class="select-field" style="margin-bottom: 0; flex: 1; height: 32px; font-size: 12px;"></select>
-                        <button id="btnAddProject" class="btn btn-secondary btn-icon" title="프로젝트 추가" style="height: 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center;">
-                            <span class="material-icons-round" style="font-size: 16px;">add</span>
-                        </button>
-                        <button id="btnRenameProject" class="btn btn-secondary btn-icon" title="프로젝트 수정" style="height: 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center;">
-                            <span class="material-icons-round" style="font-size: 16px;">edit</span>
-                        </button>
-                    </div>
-                </div>
+                <h2 class="card-title"><span class="material-icons-round icon-align">cloud_upload</span> 데이터 업로드</h2>
 
-                <!-- Update Buttons -->
-                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                    <button id="btnUpdateData" class="btn btn-primary" style="flex: 1; height: 32px; font-size: 12px; font-weight: 600; padding: 0 10px;">
-                        <span class="material-icons-round" style="font-size:16px; vertical-align:middle; margin-right:4px;">refresh</span>업데이트
-                    </button>
-                    <button id="btnSimulateFailure" class="btn btn-secondary" style="height: 32px; font-size: 11px; padding: 0 8px;" title="실패 시뮬레이션">
-                        실패 테스트
-                    </button>
-                </div>
-
-                <!-- Update Status Area -->
-                <div class="update-status-panel" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted);">
-                        <span>상태:</span>
-                        <span id="updateStatusText" style="font-weight: 600; color: var(--color-primary);">대기 중</span>
-                    </div>
-                </div>
-
-                <!-- 수동 업로드 모드 접이식 영역 -->
-                <details class="manual-upload-accordion" id="manualUploadAccordion" style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;">
-                    <summary style="font-size: 11px; color: var(--text-muted); font-weight: 600; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; outline: none; margin-bottom: 10px;">
-                        <span>🔧 수동 업로드 모드</span>
-                        <span class="material-icons-round" style="font-size: 14px;">expand_more</span>
-                    </summary>
+                <!-- 수동 업로드 모드 -->
+                <div class="manual-upload-section" id="manualUploadAccordion">
+                    <p style="font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 10px;">🔧 수동 업로드 모드</p>
                     <div class="drop-zone" id="dropZone" style="margin-top: 6px;">
                         <span class="material-icons-round drop-icon">cloud_upload</span>
                         <p class="drop-text">CSV, TXT, Excel 파일을 드래그하거나 클릭하세요.</p>
@@ -218,7 +183,7 @@
                                 style="padding: 4px 6px; height: 26px; font-size: 10px;">
                         </div>
                     </div>
-                </details>
+                </div>
             </div>
 
 

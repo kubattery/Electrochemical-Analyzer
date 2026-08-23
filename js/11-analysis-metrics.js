@@ -81,16 +81,12 @@ function updateOverviewMetricsTable() {
         const initCharge = firstCycle.totalChargeCap || 0;
         const ice = initDischarge > 0 ? (initCharge / initDischarge) * 100 : 0;
 
-        let iceDesc = "";
         let iceColor = "";
         if (ice >= 85) {
-            iceDesc = "우수한 초기 효율 (상위권 수준)";
             iceColor = "var(--color-success)";
         } else if (ice >= 75) {
-            iceDesc = "보통 효율 (계면 안정화 보완 필요)";
             iceColor = "var(--color-orange)";
         } else {
-            iceDesc = "낮은 효율 (초기 비가역 손실 의심)";
             iceColor = "var(--color-danger)";
         }
 
@@ -105,7 +101,6 @@ function updateOverviewMetricsTable() {
                 <td style="font-weight: 500;">${initDischarge.toFixed(1)} mAh/g</td>
                 <td style="font-weight: 500;">${initCharge.toFixed(1)} mAh/g</td>
                 <td><span style="color:${iceColor}; font-weight:700;">${ice.toFixed(1)}%</span></td>
-                <td style="font-size:11px; color:var(--text-muted); font-style:italic;">${iceDesc}</td>
             </tr>
         `;
     });
@@ -167,16 +162,6 @@ function updateSlopePlateauMetricsTable() {
         const slopeRatio = totalCap > 0 ? (slopeCapacity / totalCap) * 100 : 0;
         const plateauRatio = totalCap > 0 ? (plateauCapacity / totalCap) * 100 : 0;
 
-        // 학술적 교수 디스커션 가이드 요약 생성
-        let comment = "";
-        if (plateauRatio > 55) {
-            comment = `<strong>Plateau 우세형 (${plateauRatio.toFixed(1)}%)</strong>: 나노기공 내 Na 클러스터링 거동 지배적. 저전압 고밀도 에너지 밀도용 탄소입니다.`;
-        } else if (slopeRatio > 55) {
-            comment = `<strong>Slope 우세형 (${slopeRatio.toFixed(1)}%)</strong>: 표면 흡착 및 무질서 층간 거동 지배적. 고출력/속속성(High-rate) 소재에 유리합니다.`;
-        } else {
-            comment = `<strong>하이브리드형 (${slopeRatio.toFixed(0)}:${plateauRatio.toFixed(0)})</strong>: 삽입과 기공 적층 저장 메커니즘이 고르게 발달한 탄소 거동을 지시합니다.`;
-        }
-
         const safeName = escapeHtml(ds.customName);
 
         html += `
@@ -191,7 +176,6 @@ function updateSlopePlateauMetricsTable() {
                 <td style="font-weight: 500; color: var(--color-plateau);">${plateauCapacity.toFixed(1)} mAh/g</td>
                 <td>${plateauRatio.toFixed(1)}%</td>
                 <td style="font-weight: 600; color: var(--color-success);">${totalCap.toFixed(1)} mAh/g</td>
-                <td style="font-size:11px; color:var(--text-main); line-height:1.4;">${comment}</td>
             </tr>
         `;
     });

@@ -602,32 +602,44 @@ function renderRateCapabilityCharts(opts = {}) {
  
     // ========================
     // 2. Rate Summary 바 차트 (단계별 평균 용량)
+    //    라벨·데이터 모두 rate 로 판별된 데이터셋 기준으로만 생성
+    //    (활성 데이터셋이 cycle 이면 전역 rateCapabilitySummary 에
+    //     Step N 라벨이 사이클 수만큼 생기므로 사용하지 않음)
     // ========================
-    const summaryLabels = rateCapabilitySummary.map(s => s.rate);
- 
+    const summaryPerDataset = rateKindDatasets.map(ds => ({
+        ds,
+        summary: (ds && ds.processedCycles) ? buildRateSummaryForDataset(ds.processedCycles) : []
+    }));
+
+    // 단계 인덱스별 라벨: 해당 인덱스에 값이 있는 첫 데이터셋의 라벨 사용 (요약 테이블과 동일 규칙)
+    const maxSummarySteps = Math.max(0, ...summaryPerDataset.map(item => item.summary.length));
+    const summaryLabels = [];
+    for (let sIdx = 0; sIdx < maxSummarySteps; sIdx++) {
+        let stepName = '';
+        for (const item of summaryPerDataset) {
+            if (item.summary[sIdx]) { stepName = item.summary[sIdx].rate; break; }
+        }
+        summaryLabels.push(stepName || `Step ${sIdx + 1}`);
+    }
+
     let summaryDatasets;
     if (isCompareMode) {
-        // 데이터셋마다 하나씩 구동바 (grouped bar) — cycle 로 판별된 셋은 제외
-        summaryDatasets = checkedDS.filter(ds =>
-            !(typeof isCycleKindDataset === 'function' && isCycleKindDataset(ds))
-        ).map(ds => {
-            if (!ds || !ds.processedCycles) return { label: (ds ? ds.customName : ''), data: [] };
-            const summary = buildRateSummaryForDataset(ds.processedCycles);
-            return {
-                label: ds.customName,
-                data: summary.map(s => s.avgCharge),
-                backgroundColor: ds.lineColor,
-                borderRadius: 5,
-                borderWidth: 0
-            };
-        });
+        // 데이터셋마다 하나씩 구동바 (grouped bar)
+        summaryDatasets = summaryPerDataset.map(item => ({
+            label: item.ds.customName,
+            data: item.summary.map(s => s.avgCharge),
+            backgroundColor: item.ds.lineColor,
+            borderRadius: 5,
+            borderWidth: 0
+        }));
     } else {
         const numSteps = summaryLabels.length;
+        const singleSummary = summaryPerDataset.length ? summaryPerDataset[0].summary : [];
         const singleBarColors = Array(numSteps).fill(0).map((_, i) => hexToRgba(baseColor, 0.4 + 0.6 * (i / numSteps)));
-        
+
         summaryDatasets = [{
             label: 'Avg. Capacity (mAh/g)',
-            data: rateCapabilitySummary.map(s => s.avgCharge),
+            data: singleSummary.map(s => s.avgCharge),
             backgroundColor: singleBarColors,
             borderRadius: 6,
             borderWidth: 0

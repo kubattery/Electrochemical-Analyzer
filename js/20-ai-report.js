@@ -116,6 +116,22 @@ function aiDefaultSelectedIds() {
    2. 지표 계산 (화면 테이블과 동일한 식)
    ========================================== */
 
+/**
+ * 숫자를 소수 digits 자리로 반올림해 돌려준다. 숫자가 아니면 null.
+ *
+ * [주의] 값이 없을 때 곧바로 .toFixed() 를 부르면 전체 스냅샷 생성이 예외로
+ *   중단되고, 팝업은 아무 데이터도 못 받는다. 실제로 그런 사고가 있었다.
+ *   (13-charts.js 의 buildRateSummaryForDataset 은 avgCE 를 반환하지 않는데
+ *    11-analysis-metrics.js 의 calculateRateCapability 와 같은 모양이라고
+ *    잘못 가정해 s.avgCE.toFixed() 를 호출했다.)
+ *   따라서 외부 함수에서 받은 값은 전부 이 헬퍼를 거친다.
+ */
+function aiNum(v, digits) {
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    if (!isFinite(n)) return null;
+    return +n.toFixed(typeof digits === 'number' ? digits : 2);
+}
+
 /** 1st 사이클 기준 초기 용량 및 ICE — updateOverviewMetricsTable() 과 동일 */
 function aiComputeInitial(pc) {
     const first = pc[1] || Object.values(pc)[0];
@@ -126,9 +142,9 @@ function aiComputeInitial(pc) {
     const ice = initDischarge > 0 ? (initCharge / initDischarge) * 100 : null;
 
     return {
-        initialDischargeCapacity_mAh_g: +initDischarge.toFixed(2),
-        initialChargeCapacity_mAh_g: +initCharge.toFixed(2),
-        ICE_percent: ice === null ? null : +ice.toFixed(2)
+        initialDischargeCapacity_mAh_g: aiNum(initDischarge),
+        initialChargeCapacity_mAh_g: aiNum(initCharge),
+        ICE_percent: aiNum(ice)
     };
 }
 
@@ -157,7 +173,9 @@ function aiComputeSlopePlateau(pc, cutoffV, targetCycleNum) {
             slopeCapacity = cycleData.totalDischargeCap || 0;
             plateauCapacity = 0;
         } else {
-            slopeCapacity = sodPoints[cutoffIndex].capacity;
+            // 곡선 포인트에 capacity 가 없을 수 있으므로 숫자로 강제한다
+            const cap = parseFloat(sodPoints[cutoffIndex].capacity);
+            slopeCapacity = isFinite(cap) ? cap : 0;
             plateauCapacity = (cycleData.totalDischargeCap || 0) - slopeCapacity;
         }
     }
@@ -167,11 +185,11 @@ function aiComputeSlopePlateau(pc, cutoffV, targetCycleNum) {
     return {
         cycle: cNum,
         cutoffVoltage_V: cutoffV,
-        slopeCapacity_mAh_g: +slopeCapacity.toFixed(2),
-        plateauCapacity_mAh_g: +plateauCapacity.toFixed(2),
-        totalCapacity_mAh_g: +totalCap.toFixed(2),
-        slopeRatio_percent: totalCap > 0 ? +((slopeCapacity / totalCap) * 100).toFixed(2) : null,
-        plateauRatio_percent: totalCap > 0 ? +((plateauCapacity / totalCap) * 100).toFixed(2) : null
+        slopeCapacity_mAh_g: aiNum(slopeCapacity),
+        plateauCapacity_mAh_g: aiNum(plateauCapacity),
+        totalCapacity_mAh_g: aiNum(totalCap),
+        slopeRatio_percent: totalCap > 0 ? aiNum((slopeCapacity / totalCap) * 100) : null,
+        plateauRatio_percent: totalCap > 0 ? aiNum((plateauCapacity / totalCap) * 100) : null
     };
 }
 
@@ -190,12 +208,72 @@ function aiComputeCycleLife(pc) {
 
     return {
         firstCycle: first.x,
-        firstCapacity_mAh_g: +first.y.toFixed(2),
+        firstCapacity_mAh_g: aiNum(first.y),
         lastCycle: last.x,
-        lastCapacity_mAh_g: +last.y.toFixed(2),
-        capacityRetention_percent: first.y > 0 ? +((last.y / first.y) * 100).toFixed(2) : null,
-        averageCoulombicEfficiency_percent: avgCE === null ? null : +avgCE.toFixed(2)
+        lastCapacity_mAh_g: aiNum(last.y),
+        capacityRetention_percent: first.y > 0 ? aiNum((last.y / first.y) * 100) : null,
+        averageCoulombicEfficiency_percent: aiNum(avgCE)
     };
+}
+
+/**
+ * 율속 단계별 요약.
+ *
+ * 용량·유지율은 13-charts.js 의 buildRateSummaryForDataset() 결과를 그대로 쓴다
+ * (차트와 같은 값을 보장하기 위해). 다만 그 함수는 {rate, avgCharge, retention}
+ * 세 가지만 돌려주므로, 사이클 구간과 평균 쿨롱 효율은 여기서 따로 계산해 채운다.
+ */
+function aiRateSteps(pc) {
+    if (typeof buildRateSummaryForDataset !== 'function') return [];
+
+    let base = [];
+    try {
+        base = buildRateSummaryForDataset(pc) || [];
+    } catch (err) {
+        console.warn('율속 요약 계산 실패:', err);
+        return [];
+    }
+    if (base.length === 0) return [];
+
+    // buildRateSummaryForDataset 과 동일한 단계 크기로 사이클을 묶는다
+    const stepSizeSel = document.getElementById('rateStepSize');
+    const stepSize = stepSizeSel ? (parseInt(stepSizeSel.value) || 5) : 5;
+    const cycles = Object.keys(pc).map(Number).sort((a, b) => a - b);
+
+    // 유효 사이클이 없는 단계는 buildRateSummaryForDataset 이 건너뛰므로,
+    // 같은 규칙으로 걸러 인덱스를 맞춘다.
+    const groups = [];
+    for (let i = 0; i < cycles.length; i += stepSize) {
+        const stepCycles = cycles.slice(i, i + stepSize);
+        if (stepCycles.length === 0) break;
+
+        let ceSum = 0, ceCount = 0, valid = 0;
+        stepCycles.forEach(cNum => {
+            const cyc = pc[cNum];
+            if (!cyc) return;
+            const capVal = currentRateMode === 'charge' ? cyc.totalChargeCap : cyc.totalDischargeCap;
+            if (!(capVal > 0)) return;
+            valid++;
+            if (cyc.totalDischargeCap > 0 && typeof cyc.totalChargeCap === 'number') {
+                ceSum += (cyc.totalChargeCap / cyc.totalDischargeCap) * 100;
+                ceCount++;
+            }
+        });
+        if (valid === 0) continue;
+
+        groups.push({
+            cycleRange: `${stepCycles[0]} - ${stepCycles[stepCycles.length - 1]}`,
+            avgCE: ceCount ? ceSum / ceCount : null
+        });
+    }
+
+    return base.map((s, i) => ({
+        rate: s.rate,
+        cycleRange: groups[i] ? groups[i].cycleRange : null,
+        averageCapacity_mAh_g: aiNum(s.avgCharge),
+        retention_percent: aiNum(s.retention),
+        averageCoulombicEfficiency_percent: groups[i] ? aiNum(groups[i].avgCE) : null
+    }));
 }
 
 /** 대표 사이클 충방전 곡선을 최대 maxPoints 개로 축약 ([용량, 전압] 쌍) */
@@ -263,7 +341,44 @@ function buildAiAnalysisSnapshot() {
     const targets = aiAllAnalyzableDatasets();
     const defaultIds = aiDefaultSelectedIds();
 
-    const datasets = targets.map(ds => {
+    // 데이터셋 하나에서 예외가 나도 나머지는 살린다.
+    // 예전에는 map 안에서 예외가 나면 스냅샷 전체가 실패해 팝업이 아무것도 못 받았다.
+    const datasets = [];
+    const failed = [];
+
+    targets.forEach(ds => {
+        try {
+            datasets.push(aiBuildDatasetEntry(ds, settings, defaultIds));
+        } catch (err) {
+            console.error('데이터셋 지표 계산 실패:', ds && ds.dataName, err);
+            failed.push({
+                name: (ds && (ds.dataName || ds.customName)) || '(이름 없음)',
+                reason: '지표 계산 중 오류: ' + (err && err.message ? err.message : String(err))
+            });
+        }
+    });
+
+    return {
+        generatedAt: new Date().toISOString(),
+        source: 'HC-Analyzer (ESMPL-Analyzer)',
+        analysisSettings: settings,
+        datasets: datasets,
+        unavailableDatasets: aiUnavailableDatasets().concat(failed),
+        libraryTotal: datasetLibrary.length,
+        // 팝업이 자기 버전과 비교해 옛 문서인지 스스로 알아채기 위한 값
+        expectedPopupVersion: AI_REPORT_PAGE_VERSION,
+        onScreenTables: {
+            overviewAndICE: aiScrapeTable('#tableOverviewMetrics'),
+            slopePlateau: aiScrapeTable('#tableSlopePlateauMetrics'),
+            rateSummary: aiScrapeTable('#tableRateSummary'),
+            dqdvPeaks: aiScrapeTable('#tableDqDvPeaks')
+        }
+    };
+}
+
+/** 데이터셋 1개의 지표 묶음 생성 (실패 시 예외를 던져 호출부가 격리한다) */
+function aiBuildDatasetEntry(ds, settings, defaultIds) {
+    {
         const pc = ds.processedCycles;
         const nums = Object.keys(pc).map(Number).sort((a, b) => a - b);
 
@@ -277,15 +392,7 @@ function buildAiAnalysisSnapshot() {
             settings.slopePlateauTargetCycle
         );
 
-        const rateSteps = (typeof buildRateSummaryForDataset === 'function')
-            ? buildRateSummaryForDataset(pc).map(s => ({
-                rate: s.rate,
-                cycleRange: s.cycleRange,
-                averageCapacity_mAh_g: +s.avgCharge.toFixed(2),
-                retention_percent: +s.retention.toFixed(2),
-                averageCoulombicEfficiency_percent: +s.avgCE.toFixed(2)
-            }))
-            : [];
+        const rateSteps = aiRateSteps(pc);
 
         // 대표 곡선: Slope/Plateau 분석에 쓰인 사이클과 동일한 사이클을 사용
         const curveCycleNum = sp ? sp.cycle : (nums[0] || null);
@@ -316,24 +423,7 @@ function buildAiAnalysisSnapshot() {
                 desodiation: aiDownsampleCurve(curveData.desodiation, 40)
             } : null
         };
-    });
-
-    return {
-        generatedAt: new Date().toISOString(),
-        source: 'HC-Analyzer (ESMPL-Analyzer)',
-        analysisSettings: settings,
-        datasets: datasets,
-        unavailableDatasets: aiUnavailableDatasets(),
-        libraryTotal: datasetLibrary.length,
-        // 팝업이 자기 버전과 비교해 옛 문서인지 스스로 알아채기 위한 값
-        expectedPopupVersion: AI_REPORT_PAGE_VERSION,
-        onScreenTables: {
-            overviewAndICE: aiScrapeTable('#tableOverviewMetrics'),
-            slopePlateau: aiScrapeTable('#tableSlopePlateauMetrics'),
-            rateSummary: aiScrapeTable('#tableRateSummary'),
-            dqdvPeaks: aiScrapeTable('#tableDqDvPeaks')
-        }
-    };
+    }
 }
 
 /* ==========================================

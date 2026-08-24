@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  19-experiment-detector.js   (v2.5.0)
+ * HC-Analyzer  ·  19-experiment-detector.js   (v2.6.0)
  * 역할: 실험 종류(rate / cycle) 자동 판별 + 수동 지정 전담 모듈
  *
  * [주의] 클래식 스크립트 방식입니다. index.html 에서 반드시 13-charts.js 와
@@ -12,7 +12,7 @@
  *  2. 데이터가 몇 개든 데이터셋 단위로 각각 판별한다.
  *     - rate  로 판별 → Rate Capability 차트 전용
  *     - cycle 로 판별 → Cyclability 차트 전용
- *  3. 판별 기준 (v2.5.0 — 전류 기반 판별):
+ *  3. 판별 기준 (v2.6.0 — 전류 기반 + 용량 계단 보조 판별):
  *     [수동 지정 최우선] 데이터셋에 kindManual 플래그가 있으면 experimentType
  *           ("rate" / "cycle_performance") 를 그대로 따른다.
  *           (사이드바 라이브러리의 RATE/CYCLE 선택박스 — 09-dataset-library.js)
@@ -22,9 +22,21 @@
  *           - 레벨 ≥ 3  → rate  (다단계 율속 시험)
  *           - 레벨 ≤ 2  → cycle (단일 율속, 또는 형성 사이클 + 본 사이클.
  *                         형성 구간 길이는 데이터마다 달라 레벨 2개까지 cycle 로 본다)
- *     [2차 폴백] 전류 정보를 신뢰할 수 없으면 기존 규칙 사용:
+ *     [2차 자동] 전류 정보가 없거나 신뢰 불가할 때(원본 파일에 전류 컬럼이
+ *           없는 경우 등) → 용량 곡선의 "계단(평탄 구간 + 큰 점프)" 패턴을
+ *           보조 신호로 사용한다 (classifyByCapacityShape). 순수 cycle 수명
+ *           곡선의 완만한 감쇠를 계단으로 착각하지 않도록 다음을 모두 요구한다:
+ *             - 평탄 구간(내부 변동 ≤8%, 길이 ≥3사이클)이 최소 3개 이상 존재
+ *             - 그 평탄 구간들이 전체 사이클의 60% 이상을 덮음
+ *             - 구간 경계 점프가 노이즈 중앙값의 6배·최소 8% 이상(완만한 감쇠가
+ *               우연히 쪼개지는 것을 방지)
+ *           이 조건을 만족할 때만 rate 로 판정하며, 그 외(구간이 1~2개뿐이거나
+ *           평탄 구간이 데이터 대부분을 덮지 못하는 경우)는 절대 rate 로 넘기지
+ *           않고 아래 3차 폴백에 맡긴다 — "cycle 을 계단으로 오판"하는 쪽보다
+ *           "판단을 보류하는" 쪽이 항상 안전하다는 원칙.
+ *     [3차 폴백] 위 두 판별이 모두 불확실하면 기존 규칙 사용:
  *           총 사이클 수 > 50 → cycle, 50 이하 → rate. (CYCLE_THRESHOLD)
- *           신뢰 불가 조건: 전류 결측 사이클이 20% 초과, 유효 사이클 < 4,
+ *           전류 신뢰 불가 조건: 전류 결측 사이클이 20% 초과, 유효 사이클 < 4,
  *           또는 전 사이클 대표 전류가 정확히 1.0 (= 파서가 사이클 자동 분리
  *           시 채워 넣는 가상 전류 ±1.0 → 실제 전류가 아님).
  *  4. 자동 판별 결과는 ds.experimentType 에 동기화한다 ("rate"/"cycle_performance").
@@ -225,9 +237,106 @@
     }
 
     // ==================================================================
+    // 용량 계단(capacity shape) 기반 보조 판별 — 전류 정보가 없을 때만 사용
+    //
+    //   [핵심 원칙] "확실한 계단 패턴"일 때만 rate 를 반환하고, 조금이라도
+    //   애매하면 null 을 반환해 3차 폴백(사이클 수 기준)에 넘긴다. 즉 이 함수는
+    //   cycle 데이터를 rate 로 오판할 위험이 있는 모든 경우에 판단을 보류하도록
+    //   설계했다 — "판별 안 함"이 "cycle 을 계단으로 착각함"보다 항상 안전하다.
+    //
+    //   [왜 순수 cycle 감쇠 곡선은 계단으로 안 잡히는가]
+    //   구간 경계는 "직전 사이클 대비 8% 이상 급변"할 때만 생긴다. 정상적인
+    //   수명 열화는 사이클당 <1%씩 완만하게 줄어들 뿐이라 애초에 경계 자체가
+    //   거의 생기지 않는다(구간 1개, 즉 전체가 하나의 '내리막'으로 남는다).
+    //   드물게 노이즈나 단발성 이상치로 경계가 1~2개 생기더라도, rate 판정은
+    //   "평탄 구간 3개 이상 + 전체의 60% 이상 커버"를 동시에 요구하므로
+    //   단발성 사건 한두 번으로는 절대 rate 로 넘어가지 않는다.
+    //
+    //   [평탄 구간(qualifying) 조건]
+    //     - 길이 ≥3사이클 (1~2사이클짜리는 노이즈/전이 구간으로 간주해 제외)
+    //     - 구간 내부 첫~끝 값의 상대 변화(drift) ≤8% (구간 안에서도 계속
+    //       감쇠 중이면 "평탄한 계단"이 아니라 그냥 완만한 커브의 토막이므로 제외)
+    // ==================================================================
+    const SHAPE_MIN_N = 8;              // 이보다 짧으면 계단 여부를 판단하기에 표본 부족 → 보류
+    const SHAPE_STEP_MIN = 0.08;        // 구간 경계로 인정할 최소 상대 점프 (8%)
+    const SHAPE_STEP_MEDIAN_MULT = 6;   // 노이즈 중앙값 대비 배수 (노이즈가 큰 데이터는 임계값도 자동으로 커짐)
+    const SHAPE_MIN_PLATEAU_LEN = 3;    // 평탄 구간으로 인정할 최소 길이(사이클)
+    const SHAPE_MAX_INTERNAL_DRIFT = 0.08; // 평탄 구간 내부에서 허용하는 최대 변화폭 (8%)
+    const SHAPE_MIN_QUALIFYING_SEGS = 3;   // rate 로 판정하기 위한 최소 평탄 구간 개수
+    const SHAPE_MIN_COVERAGE = 0.6;        // 평탄 구간들이 덮어야 하는 전체 대비 최소 비율
+
+    function classifyByCapacityShape(points) {
+        const n = points.length;
+        if (n < SHAPE_MIN_N) return null;
+
+        const rel = [];
+        for (let i = 1; i < n; i++) {
+            const prev = Math.abs(points[i - 1].y) || 1e-9;
+            rel.push((points[i].y - points[i - 1].y) / prev);
+        }
+        const absSorted = rel.map(Math.abs).slice().sort((a, b) => a - b);
+        const median = absSorted[Math.floor(absSorted.length / 2)] || 0;
+        // 정상 cycle 감쇠(사이클당 <1%)보다 확실히 큰 값만 "진짜 계단 경계"로 인정
+        const stepThreshold = Math.max(SHAPE_STEP_MIN, median * SHAPE_STEP_MEDIAN_MULT);
+
+        const starts = [0];
+        for (let i = 1; i < n; i++) {
+            if (Math.abs(rel[i - 1]) > stepThreshold) starts.push(i);
+        }
+        starts.push(n);
+
+        const qualifying = [];
+        for (let k = 0; k < starts.length - 1; k++) {
+            const s = starts[k], e = starts[k + 1] - 1;
+            const len = e - s + 1;
+            if (len < SHAPE_MIN_PLATEAU_LEN) continue;   // 너무 짧은 구간은 노이즈/전이로 제외
+
+            const first = points[s].y, last = points[e].y;
+            const drift = Math.abs(last - first) / (Math.abs(first) || 1e-9);
+            if (drift > SHAPE_MAX_INTERNAL_DRIFT) continue;   // 구간 내부에서도 계속 변하면 "평탄"이 아님
+
+            let sum = 0;
+            for (let i = s; i <= e; i++) sum += points[i].y;
+            qualifying.push({ start: s, end: e, len, mean: sum / len });
+        }
+
+        const coverage = qualifying.reduce((sum, s) => sum + s.len, 0) / n;
+        if (qualifying.length < SHAPE_MIN_QUALIFYING_SEGS || coverage < SHAPE_MIN_COVERAGE) {
+            return null;   // 계단 패턴이라 확신할 근거 부족 → 판단 보류 (3차 폴백에 맡김)
+        }
+
+        // 서로 다른 용량 레벨 개수(참고용 — 판정 자체는 qualifying 구간 개수로 확정됨)
+        const LEVEL_TOL = 0.12;
+        const levels = [];
+        qualifying.forEach(s => {
+            const hit = levels.find(L => Math.abs(L.mean - s.mean) <= Math.max(L.mean, s.mean) * LEVEL_TOL);
+            if (hit) {
+                hit.mean = (hit.mean * hit.count + s.mean * s.len) / (hit.count + s.len);
+                hit.count += s.len;
+            } else {
+                levels.push({ mean: s.mean, count: s.len });
+            }
+        });
+
+        // 복귀(낮은 율속 재방문) 횟수 — 인접한 평탄 구간끼리 비교해 용량이 다시 올라간 전이 수
+        let revisits = 0;
+        for (let i = 1; i < qualifying.length; i++) {
+            if (qualifying[i].mean > qualifying[i - 1].mean * (1 + SHAPE_MAX_INTERNAL_DRIFT)) revisits++;
+        }
+
+        return {
+            kind: "rate",
+            reason: `전류 정보 없음 · 용량 계단 구간 ${qualifying.length}개(레벨 ${levels.length}종, 전체의 ${(coverage * 100).toFixed(0)}% 커버` +
+                     (revisits > 0 ? `, 복귀 ${revisits}회` : "") + `) 감지 → Rate Capability`,
+            plateauCount: qualifying.length,
+            levelCount: levels.length
+        };
+    }
+
+    // ==================================================================
     // 실험 종류 자동 판별  →  { kind: 'rate'|'cycle', reason, main, segments, ... }
     // ==================================================================
-    // [폴백 기준] 전류 정보를 신뢰할 수 없을 때만 사용:
+    // [폴백 기준] 전류 정보와 용량 계단 패턴이 모두 불확실할 때만 사용:
     //   총 사이클 수가 50을 넘으면 cycle(Cyclability), 50 이하면 rate(Rate Capability)
     const CYCLE_THRESHOLD = 50;
 
@@ -288,7 +397,14 @@
             return Object.assign({ kind: cur.kind, reason: cur.reason, currentLevels: cur.levelValues }, base);
         }
 
-        // [2차 폴백] 전류 정보가 없거나 신뢰 불가 → 기존 사이클 수 기준
+        // [2차] 전류 정보가 없거나 신뢰 불가 → 용량 계단 패턴을 보조 신호로 확인.
+        //   확실한 계단 패턴(rate)일 때만 반환되고, 애매하면 null → 3차 폴백으로.
+        const shape = classifyByCapacityShape(points);
+        if (shape) {
+            return Object.assign({ kind: shape.kind, reason: shape.reason, plateauCount: shape.plateauCount, levelCount: shape.levelCount }, base);
+        }
+
+        // [3차 폴백] 전류·용량 계단 판별 모두 불확실 → 기존 사이클 수 기준
         if (n > CYCLE_THRESHOLD) {
             return Object.assign({ kind: "cycle", reason: `전류 정보 불충분 · 총 ${n}사이클 > ${CYCLE_THRESHOLD}사이클 → Cyclability` }, base);
         }

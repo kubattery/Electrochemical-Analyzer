@@ -1,6 +1,7 @@
 /* ============================================================================
- * HC-Analyzer  ·  18-cyclability.js   (v4.3.0)
+ * HC-Analyzer  ·  18-cyclability.js   (v4.3.1)
  * 역할: "Cyclability" 독립 탭 — cycle 로 판별된 데이터셋들의 수명 차트 + 지표
+ *       (v4.3.1: window.experimentKind 가 수동 지정(kindManual)을 반영하도록 수정)
  *
  * [주의] 판별 로직은 19-experiment-detector.js 전담입니다. 이 파일은
  *        판별 결과(ExperimentDetector)를 소비만 합니다.
@@ -89,8 +90,9 @@
         const rateEntries  = entries.filter(e => e.det.kind === "rate");
 
         // 활성 데이터셋 기준 판정 결과를 전역으로 노출 (다른 모듈 참고용)
-        const activeDet = (typeof processedCycles !== "undefined") ? d.detect(processedCycles, null) : null;
-        window.experimentKind = activeDet ? activeDet.kind : null;
+        //   classifyDisplayDatasets() 결과를 사용해 수동 지정(kindManual)까지 반영한다.
+        const activeEntry = entries.find(e => e.ds && typeof activeDatasetId !== "undefined" && e.ds.id === activeDatasetId) || entries[0] || null;
+        window.experimentKind = activeEntry ? activeEntry.det.kind : null;
 
         applyRouting(rateEntries.length, cycleEntries.length, entries.length);
         renderCyclability(cycleEntries);

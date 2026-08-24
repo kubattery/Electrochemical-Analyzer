@@ -642,7 +642,10 @@ function renderRateCapabilityCharts(opts = {}) {
             data: singleSummary.map(s => s.avgCharge),
             backgroundColor: singleBarColors,
             borderRadius: 6,
-            borderWidth: 0
+            borderWidth: 0,
+            // 단일 데이터셋일 때 바가 지나치게 넓어지는 것 방지 (비교 모드는 기본 너비 유지)
+            barPercentage: 0.55,
+            maxBarThickness: 64
         }];
     }
  

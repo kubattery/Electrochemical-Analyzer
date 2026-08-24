@@ -22,6 +22,14 @@ const AI_REPORT_WINDOW_NAME = 'hc-ai-report';
 let _aiReportWin = null;
 
 /**
+ * 팝업 페이지 캐시 버전.
+ * [중요] ai-report.html 을 수정하면 이 값을 반드시 올려야 한다.
+ * 팝업은 메인 페이지와 별개 문서이므로, 메인 창에서 Ctrl+Shift+R 을 눌러도
+ * 팝업의 캐시는 갱신되지 않는다. 이 쿼리 문자열이 유일한 갱신 수단이다.
+ */
+const AI_REPORT_PAGE_VERSION = '1.1.0';
+
+/**
  * postMessage 대상 오리진.
  * file:// 로 직접 열면 location.origin 이 문자열 "null" 이 되어 오리진 지정이
  * 불가능하므로 그 경우에만 '*' 로 완화한다. (GitHub Pages 배포 시엔 정상 오리진)
@@ -300,7 +308,7 @@ function openAiReportWindow() {
     }
 
     _aiReportWin = window.open(
-        'ai-report.html',
+        'ai-report.html?v=' + AI_REPORT_PAGE_VERSION,
         AI_REPORT_WINDOW_NAME,
         'width=1040,height=920,menubar=no,toolbar=no,location=no,status=no'
     );

@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 이 창은 별도 문서라 메인 페이지를 새로고침해도 갱신되지 않는다.
+         옛 문서가 캐시에서 살아나 "바뀐 게 없다"로 보이는 사고를 막는다. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>AI 소재 해석 — HC-Analyzer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -195,6 +200,9 @@
 <body>
 <div class="wrap">
 
+    <!-- 이 문서가 캐시에서 나온 옛 버전일 때만 표시된다 -->
+    <div id="staleBanner" class="err-box" style="display:none;"></div>
+
     <div class="page-head">
         <span class="material-icons-round">psychology</span>
         <h1>AI 소재 해석</h1>
@@ -353,6 +361,10 @@ async function loadSdk() {
 const MODEL = 'claude-opus-5';
 const STORAGE_KEY = 'hc_anthropic_api_key';
 
+/* 이 문서의 버전. js/20-ai-report.js 의 AI_REPORT_PAGE_VERSION 과 같아야 한다.
+   다르면 브라우저가 옛 문서를 캐시에서 꺼내 쓴 것이므로 사용자에게 알린다. */
+const POPUP_VERSION = '1.3.0';
+
 const $ = (id) => document.getElementById(id);
 
 let snapshot = null;         // 부모 창에서 받은 분석 결과 (전체 데이터셋)
@@ -483,6 +495,27 @@ window.addEventListener('message', (event) => {
     gotPayload = true;
     stopHandshake();
     snapshot = data.payload;
+
+    // 이 문서가 캐시에서 나온 옛 버전인지 확인 (조용히 이상하게 동작하는 것보다 알리는 편이 낫다)
+    const expected = snapshot && snapshot.expectedPopupVersion;
+    if (expected && expected !== POPUP_VERSION) {
+        const banner = $('staleBanner');
+        banner.style.display = 'block';
+        banner.innerHTML =
+            `<b>이 창은 옛 버전입니다.</b> (이 문서 ${escapeHtml(POPUP_VERSION)} · 분석 창이 기대하는 버전 ${escapeHtml(expected)})<br>` +
+            '브라우저가 이전에 받아 둔 파일을 재사용하고 있습니다. 아래 버튼을 누르면 최신본을 새로 받아옵니다.' +
+            '<br><button class="btn-primary" id="btnForceReload" type="button" style="margin-top:9px;">' +
+            '<span class="material-icons-round">refresh</span> 최신 버전으로 다시 받기</button>';
+        const btn = $('btnForceReload');
+        if (btn) {
+            btn.addEventListener('click', () => {
+                const u = new URL(location.href);
+                u.searchParams.set('v', expected);
+                u.searchParams.set('t', String(Date.now()));
+                location.replace(u.toString());
+            });
+        }
+    }
     const all = (snapshot && snapshot.datasets) ? snapshot.datasets : [];
 
     // 기본 선택: 메인 창에서 체크/활성인 것들. 그것도 없으면 전부 선택.

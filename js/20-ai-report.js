@@ -27,7 +27,7 @@ let _aiReportWin = null;
  * 팝업은 메인 페이지와 별개 문서이므로, 메인 창에서 Ctrl+Shift+R 을 눌러도
  * 팝업의 캐시는 갱신되지 않는다. 이 쿼리 문자열이 유일한 갱신 수단이다.
  */
-const AI_REPORT_PAGE_VERSION = '1.2.0';
+const AI_REPORT_PAGE_VERSION = '1.3.0';
 
 /**
  * postMessage 대상 오리진.
@@ -325,6 +325,8 @@ function buildAiAnalysisSnapshot() {
         datasets: datasets,
         unavailableDatasets: aiUnavailableDatasets(),
         libraryTotal: datasetLibrary.length,
+        // 팝업이 자기 버전과 비교해 옛 문서인지 스스로 알아채기 위한 값
+        expectedPopupVersion: AI_REPORT_PAGE_VERSION,
         onScreenTables: {
             overviewAndICE: aiScrapeTable('#tableOverviewMetrics'),
             slopePlateau: aiScrapeTable('#tableSlopePlateauMetrics'),
@@ -363,8 +365,14 @@ function openAiReportWindow() {
         return;
     }
 
+    // [캐시] 버전 쿼리만으로는 부족하다. 버전을 올리기 전에 팝업을 한 번이라도 연
+    // 브라우저는 그 URL을 캐시해 두고, 이후 같은 URL이면 옛 문서를 그대로 꺼내 쓴다.
+    // 팝업 HTML은 60KB 남짓이라 매번 새로 받아도 부담이 없으므로, 매 호출마다
+    // 고유 토큰을 붙여 캐시가 원천적으로 불가능하게 만든다.
+    const popupUrl = 'ai-report.html?v=' + AI_REPORT_PAGE_VERSION + '&t=' + Date.now();
+
     _aiReportWin = window.open(
-        'ai-report.html?v=' + AI_REPORT_PAGE_VERSION,
+        popupUrl,
         AI_REPORT_WINDOW_NAME,
         'width=1040,height=920,menubar=no,toolbar=no,location=no,status=no'
     );

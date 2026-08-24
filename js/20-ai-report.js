@@ -37,15 +37,27 @@ function aiOriginAllowed(origin) {
 
 /* ==========================================
    1. 대상 데이터셋 선정
-   (13-charts.js / 19-experiment-detector.js 와 동일 규칙:
-    비교 체크가 있으면 체크된 것들, 없으면 활성 데이터셋 1개)
+   팝업에서 직접 고를 수 있도록 "분석 가능한 데이터셋 전부"를 담아 보낸다.
+   어떤 것을 기본 선택할지는 defaultSelected 로 표시만 하고, 최종 선택은 팝업이 결정한다.
    ========================================== */
-function aiPickTargetDatasets() {
+
+/** 충방전 분석이 가능한 데이터셋 전부 (GITT 등 CC/CV가 아닌 것은 제외) */
+function aiAllAnalyzableDatasets() {
+    return datasetLibrary.filter(ds =>
+        ds && !ds.isGitt && ds.processedCycles && Object.keys(ds.processedCycles).length > 0);
+}
+
+/**
+ * 기본 선택 대상 id 집합.
+ * 13-charts.js / 19-experiment-detector.js 와 동일 규칙을 기본값으로 삼는다:
+ * 비교 체크가 있으면 체크된 것들, 없으면 활성 데이터셋 1개.
+ */
+function aiDefaultSelectedIds() {
     const checked = (typeof getCheckedDatasets === 'function') ? getCheckedDatasets() : [];
     if (checked.length > 0) {
-        return checked.filter(ds => ds && ds.processedCycles);
+        return checked.filter(ds => ds && ds.processedCycles).map(ds => ds.id);
     }
-    return datasetLibrary.filter(ds => ds.id === activeDatasetId && ds.processedCycles);
+    return datasetLibrary.filter(ds => ds.id === activeDatasetId && ds.processedCycles).map(ds => ds.id);
 }
 
 /* ==========================================
@@ -196,7 +208,8 @@ function aiCollectSettings() {
    ========================================== */
 function buildAiAnalysisSnapshot() {
     const settings = aiCollectSettings();
-    const targets = aiPickTargetDatasets();
+    const targets = aiAllAnalyzableDatasets();
+    const defaultIds = aiDefaultSelectedIds();
 
     const datasets = targets.map(ds => {
         const pc = ds.processedCycles;
@@ -227,6 +240,11 @@ function buildAiAnalysisSnapshot() {
         const curveData = curveCycleNum !== null ? pc[curveCycleNum] : null;
 
         return {
+            id: ds.id,
+            // 팝업의 체크박스 기본값. 최종 선택은 팝업에서 사용자가 정한다.
+            defaultSelected: defaultIds.indexOf(ds.id) !== -1,
+            isActiveInMainWindow: ds.id === activeDatasetId,
+            lineColor: ds.lineColor || ds.color || null,
             name: ds.dataName || ds.customName || '(이름 없음)',
             sample: ds.sampleName || null,
             project: ds.projectName || null,

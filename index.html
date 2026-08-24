@@ -39,38 +39,63 @@
         };
 
         // 더블클릭 → 원래 배율로 복원
+        //   [버그 수정] 이 앱은 같은 <canvas> 위에서 차트를 destroy() 후 재생성하는
+        //   패턴을 광범위하게 쓴다(사이클 선택 변경, 필터 변경, 탭 전환마다). 예전
+        //   코드는 afterInit 마다 canvas.addEventListener('dblclick', ...) 를 매번
+        //   새로 붙였는데, destroy() 는 Chart.js 내부 리스너만 정리할 뿐 외부에서
+        //   추가한 이 리스너는 절대 제거하지 않는다. 그래서 차트를 다시 그릴 때마다
+        //   "이미 destroy() 된 예전 차트"를 가리키는 리스너가 캔버스에 계속 쌓이고,
+        //   더블클릭하면 쌓인 리스너 전부가 실행되면서 죽은 차트에 resetZoom() 을
+        //   호출해 런타임 오류가 발생했다(쌓인 개수만큼 반복해서).
+        //   → 캔버스당 리스너를 "딱 한 번만" 등록하고, 그 리스너는 항상 canvas 에
+        //   저장해 둔 "현재 살아있는 차트" 참조를 읽어서 동작하도록 바꾼다.
         Chart.register({
           id: 'dblClickResetZoom',
           afterInit: function (chart) {
             if (!chart.canvas) return;
-            chart.canvas.addEventListener('dblclick', function () {
-              if (typeof chart.resetZoom === 'function') chart.resetZoom();
+            var canvas = chart.canvas;
+            canvas.__liveChart = chart;   // afterInit 마다 "최신 차트"로 갱신
+            if (canvas.__dblClickResetZoomBound) return;   // 리스너는 캔버스당 1회만 등록
+            canvas.__dblClickResetZoomBound = true;
+            canvas.addEventListener('dblclick', function () {
+              var liveChart = canvas.__liveChart;
+              if (!liveChart || typeof liveChart.resetZoom !== 'function') return;
+              try { liveChart.resetZoom(); } catch (e) { /* destroy 직후 등 예외적 타이밍은 조용히 무시 */ }
             });
+          },
+          beforeDestroy: function (chart) {
+            if (chart.canvas && chart.canvas.__liveChart === chart) {
+              chart.canvas.__liveChart = null;
+            }
           }
         });
 
         // 드래그 → 확대된 화면 이동 (Hammer 없이 드래그를 직접 감지해 chart.pan 호출)
-        var _panState = { chart: null, lastX: 0, lastY: 0 };
+        //   [버그 수정 동일 적용] mousedown 리스너도 캔버스당 1회만 등록하고,
+        //   패닝 시작 시 canvas.__liveChart 로 항상 최신(살아있는) 차트를 사용한다.
+        var _panState = { canvas: null, lastX: 0, lastY: 0 };
         var _panWindowBound = false;
         function _bindPanWindowOnce() {
           if (_panWindowBound) return;
           _panWindowBound = true;
           window.addEventListener('mousemove', function (e) {
-            var chart = _panState.chart;
-            if (!chart) return;
-            if (typeof chart.pan !== 'function' || !chart.canvas) { _panState.chart = null; return; }
-            var r = chart.canvas.getBoundingClientRect();
+            var canvas = _panState.canvas;
+            var chart = canvas && canvas.__liveChart;
+            if (!chart || typeof chart.pan !== 'function') { _panState.canvas = null; return; }
+            var r = canvas.getBoundingClientRect();
             var x = e.clientX - r.left;
             var y = e.clientY - r.top;
             var dx = x - _panState.lastX;
             var dy = y - _panState.lastY;
             _panState.lastX = x;
             _panState.lastY = y;
-            if (dx !== 0 || dy !== 0) chart.pan({ x: dx, y: dy }, undefined, 'none');
+            if (dx !== 0 || dy !== 0) {
+              try { chart.pan({ x: dx, y: dy }, undefined, 'none'); } catch (e) { /* 조용히 무시 */ }
+            }
           });
           window.addEventListener('mouseup', function () {
-            if (_panState.chart && _panState.chart.canvas) _panState.chart.canvas.style.cursor = '';
-            _panState.chart = null;
+            if (_panState.canvas) _panState.canvas.style.cursor = '';
+            _panState.canvas = null;
           });
         }
         Chart.register({
@@ -79,10 +104,14 @@
             _bindPanWindowOnce();
             var canvas = chart.canvas;
             if (!canvas) return;
+            canvas.__liveChart = canvas.__liveChart || chart;   // dblClickResetZoom 이 이미 갱신했다면 유지
+            if (canvas.__mouseDragPanBound) return;   // 리스너는 캔버스당 1회만 등록
+            canvas.__mouseDragPanBound = true;
             canvas.addEventListener('mousedown', function (e) {
               if (e.button !== 0) return;
+              if (!canvas.__liveChart) return;
               var r = canvas.getBoundingClientRect();
-              _panState.chart = chart;
+              _panState.canvas = canvas;
               _panState.lastX = e.clientX - r.left;
               _panState.lastY = e.clientY - r.top;
               canvas.style.cursor = 'grabbing';
@@ -840,6 +869,6 @@
     <script src="js/16-combined-view.js?v=1.1.0"></script>
     <script src="js/17-cv.js?v=4.0.0"></script>
     <script src="js/18-cyclability.js?v=4.3.0"></script>
-    <script src="js/20-ai-report.js?v=1.1.1"></script><!-- AI 소재 해석 팝업 연동 (분석 스냅샷 수집·전달) -->
+    <script src="js/20-ai-report.js?v=1.1.0"></script><!-- AI 소재 해석 팝업 연동 (분석 스냅샷 수집·전달) -->
 </body>
 </html>

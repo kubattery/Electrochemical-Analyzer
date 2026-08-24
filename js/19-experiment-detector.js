@@ -1,5 +1,5 @@
 /* ============================================================================
- * HC-Analyzer  ·  19-experiment-detector.js   (v2.6.0)
+ * HC-Analyzer  ·  19-experiment-detector.js   (v2.7.0)
  * 역할: 실험 종류(rate / cycle) 자동 판별 + 수동 지정 전담 모듈
  *
  * [주의] 클래식 스크립트 방식입니다. index.html 에서 반드시 13-charts.js 와
@@ -12,7 +12,7 @@
  *  2. 데이터가 몇 개든 데이터셋 단위로 각각 판별한다.
  *     - rate  로 판별 → Rate Capability 차트 전용
  *     - cycle 로 판별 → Cyclability 차트 전용
- *  3. 판별 기준 (v2.6.0 — 전류 기반 + 용량 계단 보조 판별):
+ *  3. 판별 기준 (v2.7.0 — 전류 기반 + 용량 "초반 복귀" 보조 판별):
  *     [수동 지정 최우선] 데이터셋에 kindManual 플래그가 있으면 experimentType
  *           ("rate" / "cycle_performance") 를 그대로 따른다.
  *           (사이드바 라이브러리의 RATE/CYCLE 선택박스 — 09-dataset-library.js)
@@ -23,17 +23,23 @@
  *           - 레벨 ≤ 2  → cycle (단일 율속, 또는 형성 사이클 + 본 사이클.
  *                         형성 구간 길이는 데이터마다 달라 레벨 2개까지 cycle 로 본다)
  *     [2차 자동] 전류 정보가 없거나 신뢰 불가할 때(원본 파일에 전류 컬럼이
- *           없는 경우 등) → 용량 곡선의 "계단(평탄 구간 + 큰 점프)" 패턴을
- *           보조 신호로 사용한다 (classifyByCapacityShape). 순수 cycle 수명
- *           곡선의 완만한 감쇠를 계단으로 착각하지 않도록 다음을 모두 요구한다:
- *             - 평탄 구간(내부 변동 ≤8%, 길이 ≥3사이클)이 최소 3개 이상 존재
- *             - 그 평탄 구간들이 전체 사이클의 60% 이상을 덮음
- *             - 구간 경계 점프가 노이즈 중앙값의 6배·최소 8% 이상(완만한 감쇠가
- *               우연히 쪼개지는 것을 방지)
- *           이 조건을 만족할 때만 rate 로 판정하며, 그 외(구간이 1~2개뿐이거나
- *           평탄 구간이 데이터 대부분을 덮지 못하는 경우)는 절대 rate 로 넘기지
- *           않고 아래 3차 폴백에 맡긴다 — "cycle 을 계단으로 오판"하는 쪽보다
- *           "판단을 보류하는" 쪽이 항상 안전하다는 원칙.
+ *           없는 경우 등) → 용량 곡선의 "초반 수준 복귀" 패턴을 보조 신호로
+ *           사용한다 (detectRateRecoveryPattern). rate capability 시험은
+ *           마지막에 처음 율속으로 되돌아가 "열화되지 않았는지" 확인하는
+ *           구성이 표준이며, 이는 cycle 수명 데이터에서는 물리적으로 나올 수
+ *           없는 신호다 — 진짜 열화는 스스로 되돌아오지 않는다. 다음 세 조건을
+ *           모두 만족해야만 rate 로 판정한다:
+ *             ① 초반(중앙값)보다 중간에 30% 이상 뚜렷하게 낮아진 지점이 있음
+ *             ② 후반(중앙값)이 초반의 85% 이상으로 회복됨
+ *             ③ 그 후반 회복 구간 자체가 안정적임(구간 내 변동폭 15% 이하 —
+ *                자동 사이클 분리 과정에서 생기는 1회성 이상치에 속지 않기 위함)
+ *           초반·후반 대표값은 평균이 아닌 "중앙값"으로 계산해, 자동 사이클
+ *           분리 알고리즘이 만들어내는 이상치(글리치) 1~2개에 흔들리지 않도록
+ *           한다. 세 조건 중 하나라도 애매하면 rate 로 넘기지 않고 3차 폴백에
+ *           맡긴다 — "cycle 을 rate 로 오판"하는 쪽보다 "판단을 보류"하는 쪽이
+ *           항상 안전하다는 원칙. (참고: 최종 복귀 구간 없이 율속만 계속
+ *           올리는 편도 rate 시험은 이 보조 신호로 못 잡아내며 3차 폴백에
+ *           맡겨진다 — 전류 컬럼이 있는 파일이면 1차에서 이미 정확히 잡힌다.)
  *     [3차 폴백] 위 두 판별이 모두 불확실하면 기존 규칙 사용:
  *           총 사이클 수 > 50 → cycle, 50 이하 → rate. (CYCLE_THRESHOLD)
  *           전류 신뢰 불가 조건: 전류 결측 사이클이 20% 초과, 유효 사이클 < 4,
@@ -237,106 +243,90 @@
     }
 
     // ==================================================================
-    // 용량 계단(capacity shape) 기반 보조 판별 — 전류 정보가 없을 때만 사용
+    // 용량 "초반 복귀" 패턴 기반 보조 판별 — 전류 정보가 없을 때만 사용
     //
-    //   [핵심 원칙] "확실한 계단 패턴"일 때만 rate 를 반환하고, 조금이라도
-    //   애매하면 null 을 반환해 3차 폴백(사이클 수 기준)에 넘긴다. 즉 이 함수는
-    //   cycle 데이터를 rate 로 오판할 위험이 있는 모든 경우에 판단을 보류하도록
-    //   설계했다 — "판별 안 함"이 "cycle 을 계단으로 착각함"보다 항상 안전하다.
+    //   [핵심 원칙] "확실한 복귀 패턴"일 때만 rate 를 반환하고, 조금이라도
+    //   애매하면 null 을 반환해 3차 폴백(사이클 수 기준)에 넘긴다 — cycle 을
+    //   rate 로 오판하는 쪽보다 "판단을 보류"하는 쪽이 항상 안전하다.
     //
-    //   [왜 순수 cycle 감쇠 곡선은 계단으로 안 잡히는가]
-    //   구간 경계는 "직전 사이클 대비 8% 이상 급변"할 때만 생긴다. 정상적인
-    //   수명 열화는 사이클당 <1%씩 완만하게 줄어들 뿐이라 애초에 경계 자체가
-    //   거의 생기지 않는다(구간 1개, 즉 전체가 하나의 '내리막'으로 남는다).
-    //   드물게 노이즈나 단발성 이상치로 경계가 1~2개 생기더라도, rate 판정은
-    //   "평탄 구간 3개 이상 + 전체의 60% 이상 커버"를 동시에 요구하므로
-    //   단발성 사건 한두 번으로는 절대 rate 로 넘어가지 않는다.
+    //   [왜 이 신호가 안전한가]
+    //   rate capability 시험은 마지막에 처음 율속으로 되돌아가 "셀이 손상되지
+    //   않았는지" 확인하는 구성이 표준이다. 반면 cycle 수명 데이터의 용량
+    //   열화는 비가역적이라 스스로 초반 수준(85%+)으로 되돌아와 여러 사이클
+    //   동안 안정적으로 유지되는 일이 물리적으로 없다. 완만한 감쇠든, 급격한
+    //   "무릎(knee)형" 열화든 상관없이 전부 계속 내려가기만 하므로, 이 검사는
+    //   그 어떤 형태의 cycle 데이터에도 걸리지 않는다.
     //
-    //   [평탄 구간(qualifying) 조건]
-    //     - 길이 ≥3사이클 (1~2사이클짜리는 노이즈/전이 구간으로 간주해 제외)
-    //     - 구간 내부 첫~끝 값의 상대 변화(drift) ≤8% (구간 안에서도 계속
-    //       감쇠 중이면 "평탄한 계단"이 아니라 그냥 완만한 커브의 토막이므로 제외)
+    //   [자동 사이클 분리 글리치 대응]
+    //   원본 파일에 사이클/전류 컬럼이 없어 자동으로 사이클을 나눌 때, 파형
+    //   경계에서 이상치(예: 값이 순간적으로 0 근처로 튀었다가 반동으로 크게
+    //   튀는 1~2개 사이클)가 섞여 들어올 수 있다. 초반·후반 대표값을 평균이
+    //   아닌 "중앙값"으로 계산해 이런 1회성 이상치 한두 개에 흔들리지 않게 한다.
+    //
+    //   [판정 조건 — 셋 다 만족해야 rate]
+    //     ① dropRatio ≥30% : 초반 대비 중간에 뚜렷하게 낮아진 지점이 있었다
+    //     ② recoverRatio ≥85% : 후반이 초반 수준으로 충분히 되돌아왔다
+    //     ③ lateSpread ≤15% : 그 후반 구간 자체가 안정적으로 유지된다
+    //        (되돌아온 값이 1회성 튐이 아니라 진짜 정착된 평탄 구간인지 확인)
+    //
+    //   [한계] 마지막에 초반 율속으로 복귀하지 않고 계속 율속만 올리다 끝나는
+    //   rate 시험은 이 신호로 못 잡는다 — 그런 경우는 3차 폴백(사이클 수 기준)
+    //   또는 사이드바의 수동 지정으로 처리한다.
     // ==================================================================
-    const SHAPE_MIN_N = 8;              // 이보다 짧으면 계단 여부를 판단하기에 표본 부족 → 보류
-    const SHAPE_STEP_MIN = 0.08;        // 구간 경계로 인정할 최소 상대 점프 (8%)
-    const SHAPE_STEP_MEDIAN_MULT = 6;   // 노이즈 중앙값 대비 배수 (노이즈가 큰 데이터는 임계값도 자동으로 커짐)
-    const SHAPE_MIN_PLATEAU_LEN = 3;    // 평탄 구간으로 인정할 최소 길이(사이클)
-    const SHAPE_MAX_INTERNAL_DRIFT = 0.08; // 평탄 구간 내부에서 허용하는 최대 변화폭 (8%)
-    const SHAPE_MIN_QUALIFYING_SEGS = 3;   // rate 로 판정하기 위한 최소 평탄 구간 개수
-    const SHAPE_MIN_COVERAGE = 0.6;        // 평탄 구간들이 덮어야 하는 전체 대비 최소 비율
+    const RECOVERY_MIN_N = 10;          // 이보다 짧으면 판단 보류
+    const RECOVERY_WIN_MIN = 3;         // 초반/후반 대표 구간 최소 길이
+    const RECOVERY_WIN_MAX = 5;         // 초반/후반 대표 구간 최대 길이
+    const RECOVERY_DROP_RATIO = 0.3;    // ① 최소 하락폭
+    const RECOVERY_RECOVER_RATIO = 0.85; // ② 최소 복귀 수준
+    const RECOVERY_LATE_SPREAD_MAX = 0.15; // ③ 후반 구간 최대 변동폭
+    const RECOVERY_MIN_LOW_FRACTION = 0.15; // 중간 구간에서 "최저 대표값" 계산에 쓸 하위 비율
 
-    function classifyByCapacityShape(points) {
+    function median(arr) {
+        const s = arr.slice().sort((a, b) => a - b);
+        return s[Math.floor(s.length / 2)];
+    }
+
+    function detectRateRecoveryPattern(points) {
         const n = points.length;
-        if (n < SHAPE_MIN_N) return null;
+        if (n < RECOVERY_MIN_N) return null;
 
-        const rel = [];
-        for (let i = 1; i < n; i++) {
-            const prev = Math.abs(points[i - 1].y) || 1e-9;
-            rel.push((points[i].y - points[i - 1].y) / prev);
-        }
-        const absSorted = rel.map(Math.abs).slice().sort((a, b) => a - b);
-        const median = absSorted[Math.floor(absSorted.length / 2)] || 0;
-        // 정상 cycle 감쇠(사이클당 <1%)보다 확실히 큰 값만 "진짜 계단 경계"로 인정
-        const stepThreshold = Math.max(SHAPE_STEP_MIN, median * SHAPE_STEP_MEDIAN_MULT);
+        const winSize = Math.max(RECOVERY_WIN_MIN, Math.min(RECOVERY_WIN_MAX, Math.floor(n * 0.1)));
+        const earlyVals = points.slice(0, winSize).map(p => p.y);
+        const lateVals = points.slice(n - winSize).map(p => p.y);
+        const early = median(earlyVals);
+        const late = median(lateVals);
 
-        const starts = [0];
-        for (let i = 1; i < n; i++) {
-            if (Math.abs(rel[i - 1]) > stepThreshold) starts.push(i);
-        }
-        starts.push(n);
+        const middle = points.slice(winSize, n - winSize);
+        if (middle.length < 3) return null;
 
-        const qualifying = [];
-        for (let k = 0; k < starts.length - 1; k++) {
-            const s = starts[k], e = starts[k + 1] - 1;
-            const len = e - s + 1;
-            if (len < SHAPE_MIN_PLATEAU_LEN) continue;   // 너무 짧은 구간은 노이즈/전이로 제외
+        // 중간 구간 하위 15%의 중앙값 = 이상치 하나에 흔들리지 않는 "최저 대표 용량"
+        const midSorted = middle.map(p => p.y).slice().sort((a, b) => a - b);
+        const lowCount = Math.max(1, Math.ceil(midSorted.length * RECOVERY_MIN_LOW_FRACTION));
+        const minLevel = median(midSorted.slice(0, lowCount));
 
-            const first = points[s].y, last = points[e].y;
-            const drift = Math.abs(last - first) / (Math.abs(first) || 1e-9);
-            if (drift > SHAPE_MAX_INTERNAL_DRIFT) continue;   // 구간 내부에서도 계속 변하면 "평탄"이 아님
+        const earlyAbs = Math.abs(early) || 1e-9;
+        const dropRatio = (early - minLevel) / earlyAbs;
+        if (dropRatio < RECOVERY_DROP_RATIO) return null;   // ① 뚜렷한 하락이 없으면 보류
 
-            let sum = 0;
-            for (let i = s; i <= e; i++) sum += points[i].y;
-            qualifying.push({ start: s, end: e, len, mean: sum / len });
-        }
+        const recoverRatio = late / earlyAbs;
+        if (recoverRatio < RECOVERY_RECOVER_RATIO) return null;   // ② 초반 수준으로 못 돌아왔으면 보류
 
-        const coverage = qualifying.reduce((sum, s) => sum + s.len, 0) / n;
-        if (qualifying.length < SHAPE_MIN_QUALIFYING_SEGS || coverage < SHAPE_MIN_COVERAGE) {
-            return null;   // 계단 패턴이라 확신할 근거 부족 → 판단 보류 (3차 폴백에 맡김)
-        }
-
-        // 서로 다른 용량 레벨 개수(참고용 — 판정 자체는 qualifying 구간 개수로 확정됨)
-        const LEVEL_TOL = 0.12;
-        const levels = [];
-        qualifying.forEach(s => {
-            const hit = levels.find(L => Math.abs(L.mean - s.mean) <= Math.max(L.mean, s.mean) * LEVEL_TOL);
-            if (hit) {
-                hit.mean = (hit.mean * hit.count + s.mean * s.len) / (hit.count + s.len);
-                hit.count += s.len;
-            } else {
-                levels.push({ mean: s.mean, count: s.len });
-            }
-        });
-
-        // 복귀(낮은 율속 재방문) 횟수 — 인접한 평탄 구간끼리 비교해 용량이 다시 올라간 전이 수
-        let revisits = 0;
-        for (let i = 1; i < qualifying.length; i++) {
-            if (qualifying[i].mean > qualifying[i - 1].mean * (1 + SHAPE_MAX_INTERNAL_DRIFT)) revisits++;
-        }
+        const lateAbs = Math.abs(late) || 1e-9;
+        const lateSpread = (Math.max(...lateVals) - Math.min(...lateVals)) / lateAbs;
+        if (lateSpread > RECOVERY_LATE_SPREAD_MAX) return null;   // ③ 복귀 구간이 불안정하면(글리치) 보류
 
         return {
             kind: "rate",
-            reason: `전류 정보 없음 · 용량 계단 구간 ${qualifying.length}개(레벨 ${levels.length}종, 전체의 ${(coverage * 100).toFixed(0)}% 커버` +
-                     (revisits > 0 ? `, 복귀 ${revisits}회` : "") + `) 감지 → Rate Capability`,
-            plateauCount: qualifying.length,
-            levelCount: levels.length
+            reason: `전류 정보 없음 · 초반 ${early.toFixed(1)} → 중반 최저 ${minLevel.toFixed(1)}` +
+                    `(${(dropRatio * 100).toFixed(0)}%↓) → 후반 ${late.toFixed(1)}` +
+                    `(초반 대비 ${(recoverRatio * 100).toFixed(0)}%로 복귀 후 안정) 패턴 감지 → Rate Capability`
         };
     }
 
     // ==================================================================
     // 실험 종류 자동 판별  →  { kind: 'rate'|'cycle', reason, main, segments, ... }
     // ==================================================================
-    // [폴백 기준] 전류 정보와 용량 계단 패턴이 모두 불확실할 때만 사용:
+    // [폴백 기준] 전류 정보와 용량 복귀 패턴이 모두 불확실할 때만 사용:
     //   총 사이클 수가 50을 넘으면 cycle(Cyclability), 50 이하면 rate(Rate Capability)
     const CYCLE_THRESHOLD = 50;
 
@@ -397,14 +387,14 @@
             return Object.assign({ kind: cur.kind, reason: cur.reason, currentLevels: cur.levelValues }, base);
         }
 
-        // [2차] 전류 정보가 없거나 신뢰 불가 → 용량 계단 패턴을 보조 신호로 확인.
-        //   확실한 계단 패턴(rate)일 때만 반환되고, 애매하면 null → 3차 폴백으로.
-        const shape = classifyByCapacityShape(points);
-        if (shape) {
-            return Object.assign({ kind: shape.kind, reason: shape.reason, plateauCount: shape.plateauCount, levelCount: shape.levelCount }, base);
+        // [2차] 전류 정보가 없거나 신뢰 불가 → 용량 "초반 복귀" 패턴을 보조 신호로 확인.
+        //   확실한 복귀 패턴(rate)일 때만 반환되고, 애매하면 null → 3차 폴백으로.
+        const recovery = detectRateRecoveryPattern(points);
+        if (recovery) {
+            return Object.assign({ kind: recovery.kind, reason: recovery.reason }, base);
         }
 
-        // [3차 폴백] 전류·용량 계단 판별 모두 불확실 → 기존 사이클 수 기준
+        // [3차 폴백] 전류·용량 복귀 판별 모두 불확실 → 기존 사이클 수 기준
         if (n > CYCLE_THRESHOLD) {
             return Object.assign({ kind: "cycle", reason: `전류 정보 불충분 · 총 ${n}사이클 > ${CYCLE_THRESHOLD}사이클 → Cyclability` }, base);
         }

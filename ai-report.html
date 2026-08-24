@@ -327,13 +327,28 @@
 </div>
 
 <script type="module">
-import Anthropic from 'https://esm.sh/@anthropic-ai/sdk@0.120.0';
-
 /* ============================================================================
  * AI 소재 해석 팝업
  *  - 부모 창(index.html)에서 postMessage 로 분석 스냅샷을 받아온다.
  *  - Anthropic API 는 이 브라우저에서 직접 호출한다(서버 없음).
+ *
+ * [중요] Anthropic SDK 를 최상위에서 import 하지 않는다.
+ *   ES 모듈은 import 가 하나라도 실패하면 스크립트 전체가 실행되지 않는다.
+ *   그러면 CDN이 막힌 환경(사내망·광고차단 확장)에서는 API 키가 필요 없는
+ *   기본 해석까지 통째로 죽고, 화면이 초기 문구에서 멈춘 것처럼 보인다.
+ *   따라서 SDK 는 AI 심층 해석을 실제로 누를 때만 동적으로 불러온다.
  * ========================================================================== */
+
+const SDK_URL = 'https://esm.sh/@anthropic-ai/sdk@0.120.0';
+let Anthropic = null;   // 최초 AI 호출 시에만 채워진다
+
+async function loadSdk() {
+    if (Anthropic) return Anthropic;
+    const mod = await import(SDK_URL);
+    Anthropic = mod.default || mod.Anthropic;
+    if (!Anthropic) throw new Error('SDK 모듈에서 Anthropic 클래스를 찾지 못했습니다.');
+    return Anthropic;
+}
 
 const MODEL = 'claude-opus-5';
 const STORAGE_KEY = 'hc_anthropic_api_key';
@@ -387,15 +402,69 @@ function setStatus(text, kind, spinning) {
         `<span style="color:${color}">${escapeHtml(text)}</span>`;
 }
 
-/* ---------------- 부모 창과의 통신 ---------------- */
+/* ---------------- 부모 창과의 통신 ----------------
+ * 부모 창이 응답하지 않으면 화면이 "불러오는 중"에서 영구히 멈춰 있었다.
+ * 짧은 간격으로 몇 번 재시도하고, 그래도 안 오면 원인을 알려 준다.
+ * ------------------------------------------------ */
+const HANDSHAKE_TRIES = 5;
+const HANDSHAKE_INTERVAL_MS = 700;
+let handshakeTimer = null;
+let handshakeCount = 0;
+let gotPayload = false;
+
+function stopHandshake() {
+    if (handshakeTimer) { clearInterval(handshakeTimer); handshakeTimer = null; }
+}
+
+function parentUnavailable() {
+    return !window.opener || window.opener.closed;
+}
+
+function sendRequestOnce() {
+    if (parentUnavailable()) return false;
+    window.opener.postMessage({ type: 'HCAI_REQUEST_PAYLOAD' }, targetOrigin());
+    return true;
+}
+
+function handshakeFailed(reason) {
+    stopHandshake();
+    setStatus(reason, 'err');
+    $('dsList').innerHTML =
+        '<p style="font-size:12px; color:#f87171; line-height:1.7;">' +
+        escapeHtml(reason) +
+        '<br><br>분석 창(메인 페이지)에서 <b>AI 소재 해석</b> 버튼을 다시 눌러 이 창을 열어 주세요. ' +
+        '이 창을 직접 새로고침하면 부모 창과의 연결이 끊어져 데이터를 받아올 수 없습니다.</p>';
+    $('payloadView').textContent = reason;
+}
+
 function requestSnapshot() {
-    if (!window.opener || window.opener.closed) {
-        setStatus('분석 창이 닫혀 있습니다. index.html 에서 다시 열어 주세요.', 'err');
-        $('payloadView').textContent = '분석 창(부모 창)을 찾을 수 없습니다.';
+    stopHandshake();
+    gotPayload = false;
+    handshakeCount = 0;
+
+    if (parentUnavailable()) {
+        handshakeFailed('분석 창(부모 창)을 찾을 수 없습니다. 창이 닫혔거나 이 페이지를 직접 열었습니다.');
         return;
     }
+
     setStatus('분석 결과를 불러오는 중…', null, true);
-    window.opener.postMessage({ type: 'HCAI_REQUEST_PAYLOAD' }, targetOrigin());
+    sendRequestOnce();
+    handshakeCount = 1;
+
+    handshakeTimer = setInterval(() => {
+        if (gotPayload) { stopHandshake(); return; }
+        if (parentUnavailable()) {
+            handshakeFailed('분석 창이 닫혔습니다. 메인 페이지에서 이 창을 다시 열어 주세요.');
+            return;
+        }
+        if (handshakeCount >= HANDSHAKE_TRIES) {
+            handshakeFailed('분석 창이 응답하지 않습니다. 메인 페이지를 Ctrl+Shift+R 로 새로고침한 뒤 다시 시도해 주세요.');
+            return;
+        }
+        handshakeCount++;
+        setStatus(`분석 결과를 불러오는 중… (재시도 ${handshakeCount}/${HANDSHAKE_TRIES})`, null, true);
+        sendRequestOnce();
+    }, HANDSHAKE_INTERVAL_MS);
 }
 
 window.addEventListener('message', (event) => {
@@ -404,11 +473,15 @@ window.addEventListener('message', (event) => {
     if (!data || typeof data !== 'object') return;
 
     if (data.type === 'HCAI_ERROR') {
-        setStatus('분석 결과를 만들지 못했습니다: ' + data.message, 'err');
+        gotPayload = true;   // 응답은 온 것이므로 재시도를 멈춘다
+        stopHandshake();
+        handshakeFailed('분석 창이 데이터를 만들지 못했습니다: ' + data.message);
         return;
     }
     if (data.type !== 'HCAI_PAYLOAD') return;
 
+    gotPayload = true;
+    stopHandshake();
     snapshot = data.payload;
     const all = (snapshot && snapshot.datasets) ? snapshot.datasets : [];
 
@@ -433,12 +506,30 @@ function selectedDatasets() {
     return snapshot.datasets.filter(d => selectedIds.has(d.id));
 }
 
+function renderUnavailable(list) {
+    return `<div style="margin-top:9px; padding-top:9px; border-top:1px dashed var(--border-color);">
+        <p style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">해석 대상이 아닌 데이터 ${list.length}개</p>
+        ${list.map(u => `<p style="font-size:11px; color:var(--text-muted); opacity:0.75; line-height:1.6;">
+            · ${escapeHtml(u.name)} — ${escapeHtml(u.reason)}</p>`).join('')}
+    </div>`;
+}
+
 function renderDatasetList() {
     const box = $('dsList');
     const all = (snapshot && snapshot.datasets) ? snapshot.datasets : [];
 
+    const unavailable = (snapshot && snapshot.unavailableDatasets) ? snapshot.unavailableDatasets : [];
+
     if (all.length === 0) {
-        box.innerHTML = '<p style="font-size:12px; color:var(--text-muted);">분석 가능한 데이터셋이 없습니다.</p>';
+        const libTotal = (snapshot && typeof snapshot.libraryTotal === 'number') ? snapshot.libraryTotal : 0;
+        let msg;
+        if (libTotal === 0) {
+            msg = '데이터 라이브러리가 비어 있습니다. 메인 페이지에서 측정 파일(.xlsx / .csv / .txt)을 먼저 업로드해 주세요.';
+        } else {
+            msg = `라이브러리에 데이터셋 ${libTotal}개가 있지만 충방전 해석이 가능한 것이 없습니다.`;
+        }
+        box.innerHTML = `<p style="font-size:12px; color:var(--text-muted); line-height:1.7;">${escapeHtml(msg)}</p>` +
+            (unavailable.length ? renderUnavailable(unavailable) : '');
         return;
     }
 
@@ -470,6 +561,9 @@ function renderDatasetList() {
                 </span>
             </label>`;
     }).join('');
+
+    // 해석할 수 없는 데이터셋도 이유와 함께 보여 준다 (조용히 숨기면 원인 파악이 안 된다)
+    if (unavailable.length) box.insertAdjacentHTML('beforeend', renderUnavailable(unavailable));
 
     box.querySelectorAll('input[type=checkbox]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -963,10 +1057,26 @@ async function generate() {
     }, 500);
     setStatus('생성 중… 0초', null, true);
 
-    const client = new Anthropic({
-        apiKey: apiKey,
-        dangerouslyAllowBrowser: true   // 서버 없는 정적 사이트라 브라우저에서 직접 호출
-    });
+    let client;
+    try {
+        const SDK = await loadSdk();
+        client = new SDK({
+            apiKey: apiKey,
+            dangerouslyAllowBrowser: true   // 서버 없는 정적 사이트라 브라우저에서 직접 호출
+        });
+    } catch (err) {
+        clearInterval(timer);
+        console.error('SDK 로드 실패:', err);
+        setStatus('실패', 'err');
+        $('output').innerHTML =
+            '<div class="err-box"><b>Anthropic SDK를 불러오지 못했습니다.</b><br>' +
+            'AI 심층 해석은 CDN(esm.sh)에서 SDK를 받아와야 합니다. 사내망 차단, 광고 차단 확장 프로그램, ' +
+            '또는 오프라인 상태인지 확인해 주세요.<br><br>' +
+            '위의 <b>기본 해석</b>은 인터넷 없이도 동작하므로 그대로 사용하실 수 있습니다.</div>';
+        busy = false;
+        $('btnGenerate').disabled = false;
+        return;
+    }
 
     const request = {
         model: MODEL,
@@ -1062,6 +1172,7 @@ async function runStream(client, request, useFallbacks) {
 // SDK 버전에 따라 존재하지 않는 오류 클래스가 있을 수 있으므로,
 // instanceof 는 클래스가 실제로 있을 때만 평가한다 (없으면 TypeError 로 죽는다).
 function isErr(err, className) {
+    if (!Anthropic) return false;   // SDK가 아직 로드되지 않았으면 판정 불가
     const C = Anthropic[className];
     return typeof C === 'function' && err instanceof C;
 }

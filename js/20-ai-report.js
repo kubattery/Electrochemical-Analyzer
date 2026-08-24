@@ -27,7 +27,7 @@ let _aiReportWin = null;
  * 팝업은 메인 페이지와 별개 문서이므로, 메인 창에서 Ctrl+Shift+R 을 눌러도
  * 팝업의 캐시는 갱신되지 않는다. 이 쿼리 문자열이 유일한 갱신 수단이다.
  */
-const AI_REPORT_PAGE_VERSION = '1.1.0';
+const AI_REPORT_PAGE_VERSION = '1.2.0';
 
 /**
  * postMessage 대상 오리진.
@@ -49,10 +49,54 @@ function aiOriginAllowed(origin) {
    어떤 것을 기본 선택할지는 defaultSelected 로 표시만 하고, 최종 선택은 팝업이 결정한다.
    ========================================== */
 
-/** 충방전 분석이 가능한 데이터셋 전부 (GITT 등 CC/CV가 아닌 것은 제외) */
+/** 데이터셋에 분석 가능한 사이클 데이터가 들어 있는지 */
+function aiHasCycles(ds) {
+    return !!(ds && ds.processedCycles && Object.keys(ds.processedCycles).length > 0);
+}
+
+/**
+ * 충방전 분석이 가능한 데이터셋 전부.
+ * 라이브러리에 저장된 것 + 아직 저장 전인 현재 분석 데이터까지 모두 포함한다.
+ * (활성 데이터셋이 없어도 라이브러리 것만으로 해석할 수 있어야 한다)
+ */
 function aiAllAnalyzableDatasets() {
-    return datasetLibrary.filter(ds =>
-        ds && !ds.isGitt && ds.processedCycles && Object.keys(ds.processedCycles).length > 0);
+    const list = datasetLibrary.filter(ds => ds && !ds.isGitt && aiHasCycles(ds));
+
+    // 파일을 막 파싱했지만 아직 라이브러리에 저장하지 않은 상태 대응.
+    // 전역 processedCycles 에는 데이터가 있는데 라이브러리에는 없는 경우 합성 항목을 추가한다.
+    const inLibrary = activeDatasetId && list.some(ds => ds.id === activeDatasetId);
+    if (!inLibrary && typeof processedCycles !== 'undefined' &&
+        processedCycles && Object.keys(processedCycles).length > 0) {
+        list.push({
+            id: '__current__',
+            dataName: (activeFilename && activeFilename.textContent)
+                ? activeFilename.textContent + ' (저장 전)'
+                : '현재 분석 중인 데이터 (저장 전)',
+            sampleName: null,
+            projectName: null,
+            experimentType: null,
+            lineColor: '#60a5fa',
+            processedCycles: processedCycles
+        });
+    }
+    return list;
+}
+
+/**
+ * 목록에는 띄우되 해석할 수 없는 데이터셋 (사이클 데이터 없음 / GITT).
+ * 조용히 숨기면 "왜 내 데이터가 안 보이지"가 되므로 이유를 함께 보낸다.
+ */
+function aiUnavailableDatasets() {
+    return datasetLibrary
+        .filter(ds => ds && (ds.isGitt || !aiHasCycles(ds)))
+        .map(ds => ({
+            name: ds.dataName || ds.customName || '(이름 없음)',
+            reason: ds.isGitt
+                ? 'GITT 데이터는 충방전 해석 대상이 아닙니다'
+                : (ds.conversionStatus === 'failed'
+                    ? '변환 실패 상태입니다 — 파일을 다시 업로드해 주세요'
+                    : '사이클 데이터가 비어 있습니다 — 파일을 다시 업로드해 주세요')
+        }));
 }
 
 /**
@@ -279,6 +323,8 @@ function buildAiAnalysisSnapshot() {
         source: 'HC-Analyzer (ESMPL-Analyzer)',
         analysisSettings: settings,
         datasets: datasets,
+        unavailableDatasets: aiUnavailableDatasets(),
+        libraryTotal: datasetLibrary.length,
         onScreenTables: {
             overviewAndICE: aiScrapeTable('#tableOverviewMetrics'),
             slopePlateau: aiScrapeTable('#tableSlopePlateauMetrics'),
@@ -292,8 +338,18 @@ function buildAiAnalysisSnapshot() {
    6. 팝업 창 열기 / 메시지 핸드셰이크
    ========================================== */
 function openAiReportWindow() {
-    if (!hasActiveDataset()) {
-        alert('먼저 분석할 데이터를 불러와 주세요.\nAI 해석은 계산된 분석 결과를 바탕으로 작성됩니다.');
+    // 활성 데이터셋이 없어도 라이브러리에 해석 가능한 것이 있으면 열어 준다.
+    // (데이터 라이브러리에만 저장해 둔 상태에서도 바로 해석할 수 있어야 한다)
+    if (aiAllAnalyzableDatasets().length === 0) {
+        const unavailable = aiUnavailableDatasets();
+        if (datasetLibrary.length === 0) {
+            alert('데이터 라이브러리가 비어 있습니다.\n먼저 측정 파일을 업로드해 주세요.');
+        } else if (unavailable.length > 0) {
+            alert('라이브러리에 데이터셋은 있지만 충방전 해석이 가능한 것이 없습니다.\n\n' +
+                  unavailable.slice(0, 5).map(u => `· ${u.name} — ${u.reason}`).join('\n'));
+        } else {
+            alert('해석할 수 있는 충방전 데이터가 없습니다.');
+        }
         return;
     }
 

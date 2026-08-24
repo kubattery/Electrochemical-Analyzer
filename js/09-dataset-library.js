@@ -1,6 +1,7 @@
 /* ============================================================================
  * HC-Analyzer  ·  09-dataset-library.js
  * 역할: 데이터셋 라이브러리(이름모달/활성 전환/삭제/사이드바 렌더)
+ *       + 사이드바 RATE/CYCLE 선택박스 (실험 종류 수동 지정 — 19번 판별과 연동)
  *
  * [주의] 클래식 스크립트 방식입니다. 모든 모듈이 하나의 전역(window) 스코프를
  *        공유하므로 index.html에 명시된 <script> 로딩 순서를 반드시 유지하세요.
@@ -549,15 +550,63 @@ function renderDatasetLibraryUI() {
             lineDot.style.backgroundColor = ds.lineColor;
             lineDot.style.flexShrink = "0";
             
-            // experimentType badge
-            const expBadge = document.createElement('span');
-            expBadge.className = 'status-badge';
-            expBadge.style.fontSize = '8px';
-            expBadge.style.padding = '1px 3px';
-            expBadge.style.background = 'rgba(255,255,255,0.08)';
-            expBadge.style.color = 'var(--text-muted)';
-            expBadge.style.border = 'none';
-            expBadge.textContent = ds.experimentType ? ds.experimentType.toUpperCase() : 'RATE';
+            // experimentType 표시: RATE/CYCLE 선택박스 (GITT·CV 는 기존 배지 유지)
+            //   - 자동 판별(19-experiment-detector.js) 결과를 초기값으로 표시
+            //   - 잘못 판별된 경우 사용자가 직접 변경 → 즉시 반대쪽 차트로 이동
+            let expBadge;
+            if (ds.experimentType === 'gitt' || ds.experimentType === 'cv') {
+                expBadge = document.createElement('span');
+                expBadge.className = 'status-badge';
+                expBadge.style.fontSize = '8px';
+                expBadge.style.padding = '1px 3px';
+                expBadge.style.background = 'rgba(255,255,255,0.08)';
+                expBadge.style.color = 'var(--text-muted)';
+                expBadge.style.border = 'none';
+                expBadge.textContent = ds.experimentType.toUpperCase();
+            } else {
+                expBadge = document.createElement('select');
+                expBadge.className = 'ds-kind-select';
+                expBadge.title = '실험 종류 (RATE = Rate Capability / CYCLE = Cyclability)\n잘못 판별된 경우 직접 변경하면 해당 차트로 이동합니다.';
+                expBadge.style.fontSize = '8px';
+                expBadge.style.padding = '1px 2px';
+                expBadge.style.background = 'rgba(255,255,255,0.08)';
+                expBadge.style.color = 'var(--text-muted)';
+                expBadge.style.border = '1px solid rgba(255,255,255,0.15)';
+                expBadge.style.borderRadius = '3px';
+                expBadge.style.cursor = 'pointer';
+                expBadge.style.flexShrink = '0';
+                expBadge.style.colorScheme = 'dark';
+
+                [['rate', 'RATE'], ['cycle_performance', 'CYCLE']].forEach(([val, label]) => {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = label;
+                    expBadge.appendChild(opt);
+                });
+
+                // 현재 유효 종류(수동 지정 > 자동 판별)를 초기값으로 표시
+                let kind = null;
+                if (window.ExperimentDetector && typeof ExperimentDetector.getEffectiveKind === 'function') {
+                    kind = ExperimentDetector.getEffectiveKind(ds);
+                }
+                if (kind === 'cycle') expBadge.value = 'cycle_performance';
+                else if (kind === 'rate') expBadge.value = 'rate';
+                else expBadge.value = (ds.experimentType === 'cycle_performance') ? 'cycle_performance' : 'rate';
+
+                // 클릭이 부모 카드(활성 전환)로 전파되지 않도록 차단
+                expBadge.addEventListener('click', (e) => e.stopPropagation());
+
+                expBadge.addEventListener('change', async (e) => {
+                    e.stopPropagation();
+                    ds.experimentType = expBadge.value;   // 'rate' | 'cycle_performance'
+                    ds.kindManual = true;                 // 수동 지정 플래그 (자동 판별보다 우선)
+                    try { await updateDatasetInDB(ds); }
+                    catch (err) { console.warn('실험 종류 저장 실패:', err); }
+                    renderDatasetLibraryUI();
+                    renderLibraryTable();
+                    if (hasActiveDataset()) runAnalysis();  // 차트/탭 라우팅 즉시 갱신
+                });
+            }
             
             // dataName text
             const nameSpan = document.createElement('span');
@@ -683,6 +732,3 @@ function renderDatasetLibraryUI() {
         listEl.appendChild(groupContainer);
     });
 }
-
-
-

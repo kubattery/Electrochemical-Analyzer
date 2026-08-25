@@ -2,6 +2,10 @@
  * HC-Analyzer  ·  js/17-cv.js   (CV = Cyclic Voltammetry 분석 · 독립 모듈)
  * CV 파일(전압/전류)을 CV 탭에서 업로드 → 사이클 분리 → I-V 곡선 → 사이클 드롭다운
  * → 산화/환원 피크 전압 자동 검출. 기존 충방전 코드는 건드리지 않음. 엑셀은 js/xlsx-worker.js 재사용.
+ *
+ * [사이클 분리 방식]
+ *  - 파일에 'Cycle No.'(사이클 번호) 컬럼이 있으면 → 그 번호를 그대로 사용(측정기 기록과 100% 일치).
+ *  - 없으면 → 전압 스윕 정점(vertex) 기반 자동 검출로 폴백(구형 Index/Voltage/Current 폼 호환).
  * ============================================================================ */
 (function () {
   'use strict';
@@ -64,27 +68,32 @@
 
   function ingestRows(rows, filename) {
     if (!rows || rows.length < 3) { setStatus('데이터가 비어 있습니다.'); return; }
-    var headerIdx = -1, vCol = -1, iCol = -1;
+    var headerIdx = -1, vCol = -1, iCol = -1, cCol = -1;
     for (var r = 0; r < Math.min(20, rows.length); r++) {
       var row = rows[r]; if (!row) continue;
-      var vc = -1, ic = -1;
+      var vc = -1, ic = -1, cyc = -1;
       for (var c = 0; c < row.length; c++) {
         var s = String(row[c] == null ? '' : row[c]).toLowerCase().trim();
         if (vc < 0 && (s.indexOf('voltage') >= 0 || s.indexOf('전압') >= 0 || s.indexOf('v vs') >= 0 || s === 'v' || s.indexOf('potential') >= 0)) vc = c;
         if (ic < 0 && (s.indexOf('current') >= 0 || s.indexOf('전류') >= 0 || s === 'i' || s.indexOf('(a)') >= 0 || s.indexOf('(ma)') >= 0 || s.indexOf('i(') >= 0)) ic = c;
+        // 'Cycle No.'(사이클 번호) 컬럼만 인식 — 'Cycle Time' 은 제외
+        if (cyc < 0 && s.indexOf('cycle') >= 0 && (s.indexOf('no') >= 0 || s.indexOf('num') >= 0 || s.indexOf('번호') >= 0 || s.indexOf('index') >= 0)) cyc = c;
       }
-      if (vc >= 0 && ic >= 0) { headerIdx = r; vCol = vc; iCol = ic; break; }
+      if (vc >= 0 && ic >= 0) { headerIdx = r; vCol = vc; iCol = ic; cCol = cyc; break; }
     }
     if (vCol < 0 || iCol < 0) { setStatus('전압/전류 컬럼을 찾지 못했습니다. 헤더를 확인해 주세요.'); return; }
-    var V = [], I = [];
+    var V = [], I = [], C = [];
     for (var r2 = headerIdx + 1; r2 < rows.length; r2++) {
       var row2 = rows[r2]; if (!row2) continue;
       var v = parseFloat(row2[vCol]), i = parseFloat(row2[iCol]);
       if (isNaN(v) || isNaN(i)) continue;
       V.push(v); I.push(i);
+      if (cCol >= 0) { var cn = parseFloat(row2[cCol]); C.push(isNaN(cn) ? null : cn); }
     }
     if (V.length < 20) { setStatus('유효한 데이터 행이 부족합니다.'); return; }
-    buildCycles(V, I, filename);
+    // 파일에 'Cycle No.' 컬럼이 있으면 그 번호를 그대로 사용, 없으면 자동 검출로 폴백
+    if (cCol >= 0) buildCyclesFromColumn(V, I, C, filename);
+    else buildCycles(V, I, filename);
   }
 
 function detectCVCycles(V, I) {
@@ -134,23 +143,65 @@ function detectCVCycles(V, I) {
     return { v: v, i: ii };
   }
 
+  // 드롭다운을 현재 cvCycles(사이클 목록)로 채운다
+  function fillCycleSelect() {
+    var sel = $('cvCycleSelect'); if (!sel) return;
+    sel.innerHTML = '';
+    cvCycles.forEach(function (cc) {
+      var o = document.createElement('option');
+      o.value = cc.num; o.textContent = cc.num + ' 사이클';
+      sel.appendChild(o);
+    });
+  }
+
+  // [신규] 파일에 기록된 'Cycle No.' 값을 그대로 사용해 사이클을 분리한다.
+  //  - 같은 번호의 행을 등장 순서대로 묶어 하나의 사이클(닫힌 I-V 루프)로 만든다.
+  //  - 자동 검출 로직을 쓰지 않으므로, 측정기가 저장한 사이클 번호와 100% 일치한다.
+  function buildCyclesFromColumn(V, I, C, filename) {
+    cvCycles = [];
+    var groups = {}, order = [], k;
+    for (k = 0; k < V.length; k++) {
+      var num = C[k];
+      if (num == null) continue;
+      if (!Object.prototype.hasOwnProperty.call(groups, num)) { groups[num] = { v: [], i: [] }; order.push(num); }
+      groups[num].v.push(V[k]); groups[num].i.push(I[k]);
+    }
+    order.sort(function (a, b) { return a - b; }); // 사이클 번호 오름차순
+    var globalSpan = 0;
+    order.forEach(function (num) {
+      var g = groups[num], mn = Infinity, mx = -Infinity;
+      for (var j = 0; j < g.v.length; j++) { if (g.v[j] < mn) mn = g.v[j]; if (g.v[j] > mx) mx = g.v[j]; }
+      g.span = (mx - mn) || 0; if (g.span > globalSpan) globalSpan = g.span;
+    });
+    order.forEach(function (num) {
+      var g = groups[num];
+      var d = downsample(g.v, g.i, 0, g.v.length, 6000);
+      cvCycles.push({ num: num, V: d.v, I: d.i, span: g.span, npts: g.v.length });
+    });
+    if (!cvCycles.length) { setStatus('사이클 번호(Cycle No.)를 읽지 못했습니다.'); return; }
+    fillCycleSelect();
+    setStatus(filename + ' · 파일 기록 사이클 ' + cvCycles.length + '개 (' + order.join(', ') + ')');
+    // 기본 표시: 전압 구간이 충분히 넓은(정상 루프) 첫 사이클 — 부분/형성 구간을 피함
+    var startNum = cvCycles[0].num;
+    for (k = 0; k < cvCycles.length; k++) { if (cvCycles[k].span >= globalSpan * 0.7) { startNum = cvCycles[k].num; break; } }
+    var sel = $('cvCycleSelect'); if (sel) sel.value = startNum;
+    renderCycle(startNum);
+  }
+
+  // [폴백] 파일에 사이클 번호가 없을 때: 전압 스윕 정점으로 자동 검출
   function buildCycles(V, I, filename) {
     var cyc = detectCVCycles(V, I);
     cvCycles = [];
     cyc.forEach(function (c) {
-      var an = downsample(V, I, c.a, c.mid, 1500), ca = downsample(V, I, c.mid, c.end, 1500);
-      cvCycles.push({ num: c.num, anodicV: an.v, anodicI: an.i, cathodicV: ca.v, cathodicI: ca.i });
+      var d = downsample(V, I, c.a, c.end, 6000);
+      cvCycles.push({ num: c.num, V: d.v, I: d.i, span: 0, npts: c.end - c.a });
     });
-    var sel = $('cvCycleSelect');
-    if (sel) {
-      sel.innerHTML = '';
-      cvCycles.forEach(function (cc) { var o = document.createElement('option'); o.value = cc.num; o.textContent = cc.num + ' 사이클'; sel.appendChild(o); });
-    }
     if (!cvCycles.length) { setStatus('사이클을 검출하지 못했습니다.'); return; }
-    setStatus(filename + ' · 총 ' + cvCycles.length + ' 사이클');
-// 1번 사이클은 형성(formation) 단계라 이상해 보일 수 있어, 기본값은 중간 사이클로 표시
+    fillCycleSelect();
+    setStatus(filename + ' · 총 ' + cvCycles.length + ' 사이클 (자동 검출)');
+    // 1번 사이클은 형성(formation) 단계라 이상해 보일 수 있어, 기본값은 중간 사이클로 표시
     var startNum = cvCycles[Math.floor(cvCycles.length / 2)].num;
-    if (sel) sel.value = startNum;
+    var sel = $('cvCycleSelect'); if (sel) sel.value = startNum;
     renderCycle(startNum);
   }
 
@@ -159,8 +210,7 @@ function detectCVCycles(V, I) {
     for (k = 0; k < cvCycles.length; k++) { if (cvCycles[k].num == num) { cc = cvCycles[k]; break; } }
     if (!cc) return;
     var data = [], j;
-    for (j = 0; j < cc.anodicV.length; j++) data.push({ x: cc.anodicV[j], y: cc.anodicI[j] * 1000 });
-    for (j = 0; j < cc.cathodicV.length; j++) data.push({ x: cc.cathodicV[j], y: cc.cathodicI[j] * 1000 });
+    for (j = 0; j < cc.V.length; j++) data.push({ x: cc.V[j], y: cc.I[j] * 1000 });
     renderCVChart(data, num);
     renderPeakTable(detectPeaks(cc, getSensitivity()));
   }
@@ -237,7 +287,13 @@ function detectCVCycles(V, I) {
   }
 
   function detectPeaks(cc, sens) {
-    return { anodic: findPeaks(cc.anodicV, cc.anodicI, true, sens), cathodic: findPeaks(cc.cathodicV, cc.cathodicI, false, sens) };
+    // 산화(anodic)=양(+)전류 구간, 환원(cathodic)=음(-)전류 구간으로 나눠 피크 검출
+    var aV = [], aI = [], cV = [], cI = [], k;
+    for (k = 0; k < cc.V.length; k++) {
+      if (cc.I[k] > 0) { aV.push(cc.V[k]); aI.push(cc.I[k]); }
+      else if (cc.I[k] < 0) { cV.push(cc.V[k]); cI.push(cc.I[k]); }
+    }
+    return { anodic: findPeaks(aV, aI, true, sens), cathodic: findPeaks(cV, cI, false, sens) };
   }
 
   function renderPeakTable(peaks) {

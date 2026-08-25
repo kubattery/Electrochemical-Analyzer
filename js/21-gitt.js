@@ -308,6 +308,67 @@
         var nDis = pulses.length - nCh;
         setStatus('감지 완료: 펄스 ' + pulses.length + '개 (충전 ' + nCh + ' · 방전 ' + nDis + ') — 펄스 ≈ ' +
             fmtDur(pulseMode) + ', 완화 ≈ ' + fmtDur(restMode) + ' · 파일: ' + gittFilename);
+
+        registerGittDataset(pulses.length, nCh, nDis);
+    }
+
+    // ==================================================================
+    // 데이터 라이브러리 등록: 분석에 성공한 GITT 파일을 "GITT" 배지로 표시.
+    //   - rate/cycle 전환 대상이 아님(독립 분석) — 표시·관리(이름/삭제)용.
+    //   - 클릭 시 일반 분석으로 전환되지 않고 GITT 탭만 열린다 (09번 가드).
+    //   - 라이브러리 전역이 없는 환경에서도 GITT 분석 자체는 동작하도록 전부 가드.
+    // ==================================================================
+    function registerGittDataset(nPulse, nCh, nDis) {
+        if (typeof datasetLibrary === 'undefined' || typeof normalizeDataset !== 'function') return;
+        try {
+            var metric = '펄스 ' + nPulse + '개 (충 ' + nCh + ' · 방 ' + nDis + ')';
+            var now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            var existing = null;
+            for (var i = 0; i < datasetLibrary.length; i++) {
+                if (datasetLibrary[i].experimentType === 'gitt' && datasetLibrary[i].filename === gittFilename) {
+                    existing = datasetLibrary[i];
+                    break;
+                }
+            }
+            if (existing) {
+                // 같은 파일 재업로드 → 새 항목을 만들지 않고 기존 항목 갱신
+                existing.keyMetric = metric;
+                existing.lastConvertedAt = now;
+                existing.conversionStatus = 'converted';
+                if (typeof updateDatasetInDB === 'function') {
+                    Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('GITT DB 갱신 실패:', e); });
+                }
+            } else {
+                var base = gittFilename ? gittFilename.replace(/\.[^.]+$/, '') : 'GITT';
+                var ds = {
+                    id: Date.now().toString(),
+                    projectName: (typeof activeProjectId !== 'undefined' && activeProjectId) ? activeProjectId : 'Default Project',
+                    experimentType: 'gitt',
+                    isGitt: true,               // 01-core 초기 로드 시 자동 활성화 제외 플래그
+                    dataName: base,
+                    customName: base,
+                    sampleName: '',
+                    filename: gittFilename,
+                    uploadedAt: now,
+                    lastConvertedAt: now,
+                    conversionStatus: 'converted',
+                    keyMetric: metric,
+                    processedCycles: {},        // 일반 분석 사이클 없음 (독립 분석)
+                    totalCycles: 0,
+                    ice: '-',
+                    compareEnabled: false       // 비교 오버레이 대상 아님
+                };
+                normalizeDataset(ds);
+                datasetLibrary.push(ds);
+                if (typeof saveDatasetToDB === 'function') {
+                    Promise.resolve(saveDatasetToDB(ds)).catch(function (e) { console.warn('GITT DB 저장 실패:', e); });
+                }
+            }
+            if (typeof renderDatasetLibraryUI === 'function') renderDatasetLibraryUI();
+            if (typeof renderLibraryTable === 'function') renderLibraryTable();
+        } catch (e) {
+            console.warn('GITT 라이브러리 등록 실패:', e);
+        }
     }
 
     function fmtDur(sec) {

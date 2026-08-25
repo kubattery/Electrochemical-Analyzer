@@ -24,6 +24,8 @@
     var gittSegments = [];      // 감지된 구간 목록
     var gittPulses = [];        // 유효 펄스 결과
     var gittTrimT = null;       // formation 제외: 이 시각(초) 이전 데이터는 표시하지 않음
+    var gittViewMin = null;     // 프로파일 x축 구간 보기 시작 (h, formation 제외 후 기준)
+    var gittViewMax = null;     // 프로파일 x축 구간 보기 끝 (h)
     var gittFilename = '';
     var gittWorker = null, gittJob = 0;
     var chartProfile = null, chartDiffusion = null;
@@ -409,13 +411,24 @@
         var nShow = gittPoints.length - startIdx;
         if (nShow < 2) { startIdx = 0; trimT = gittPoints[0].t; nShow = gittPoints.length; }
 
-        // 대용량 대비 다운샘플링 (~4000 포인트)
+        // 사용자 지정 x축 구간(h) 적용: 해당 구간만 잘라서 상세 표시
+        var endIdx = gittPoints.length - 1;
+        if (gittViewMin != null || gittViewMax != null) {
+            var tMin = trimT + (gittViewMin != null ? gittViewMin : 0) * 3600;
+            var tMax = (gittViewMax != null) ? trimT + gittViewMax * 3600 : gittPoints[endIdx].t;
+            while (startIdx < gittPoints.length && gittPoints[startIdx].t < tMin) startIdx++;
+            while (endIdx > startIdx && gittPoints[endIdx].t > tMax) endIdx--;
+            nShow = endIdx - startIdx + 1;
+            if (nShow < 2) { return; } // 구간에 데이터 없음 → 빈 차트 유지
+        }
+
+        // 대용량 대비 다운샘플링 (~4000 포인트, 표시 구간 기준이라 좁힐수록 상세해짐)
         var stride = Math.max(1, Math.floor(nShow / 4000));
         var data = [];
-        for (var i = startIdx; i < gittPoints.length; i += stride) {
+        for (var i = startIdx; i <= endIdx; i += stride) {
             data.push({ x: (gittPoints[i].t - trimT) / 3600, y: gittPoints[i].v });
         }
-        var last = gittPoints[gittPoints.length - 1];
+        var last = gittPoints[endIdx];
         var lastX = (last.t - trimT) / 3600;
         if (!data.length || data[data.length - 1].x !== lastX) data.push({ x: lastX, y: last.v });
 
@@ -452,6 +465,8 @@
                 scales: {
                     x: {
                         type: 'linear',
+                        min: (gittViewMin != null) ? gittViewMin : undefined,
+                        max: (gittViewMax != null) ? gittViewMax : undefined,
                         title: { display: true, text: 'Time (h)', color: '#fff' },
                         grid: { color: 'rgba(255,255,255,0.05)' },
                         ticks: { color: '#9ca3af' }
@@ -614,6 +629,30 @@
         if (showSel) showSel.addEventListener('change', function () {
             renderDiffusionChart();
             renderSummaryTable();
+        });
+
+        // 프로파일 x축 구간 보기: 시작/끝(h) 입력 시 해당 구간만 상세 표시
+        var applyRange = function () {
+            var s = parseFloat($('gittRangeStart') && $('gittRangeStart').value);
+            var e = parseFloat($('gittRangeEnd') && $('gittRangeEnd').value);
+            gittViewMin = isNaN(s) ? null : Math.max(0, s);
+            gittViewMax = isNaN(e) ? null : e;
+            // 시작 ≥ 끝처럼 뒤집힌 입력이면 구간 지정을 무시하고 전체 표시
+            if (gittViewMin != null && gittViewMax != null && gittViewMin >= gittViewMax) {
+                gittViewMin = null; gittViewMax = null;
+            }
+            if (gittPoints.length) renderProfileChart();
+        };
+        ['gittRangeStart', 'gittRangeEnd'].forEach(function (id) {
+            var el = $(id);
+            if (el) el.addEventListener('change', applyRange);
+        });
+        var btnRangeReset = $('gittRangeReset');
+        if (btnRangeReset) btnRangeReset.addEventListener('click', function () {
+            if ($('gittRangeStart')) $('gittRangeStart').value = '';
+            if ($('gittRangeEnd')) $('gittRangeEnd').value = '';
+            gittViewMin = null; gittViewMax = null;
+            if (gittPoints.length) renderProfileChart();
         });
 
         var btnExport = $('btnExportGittXlsx');

@@ -21,13 +21,14 @@ function headerRowInfo(jsonData) {
             if (cell !== undefined && cell !== null) {
                 const c = String(cell).toLowerCase().trim();
                 if (c.includes('time') && (c.includes('(s)') || c.includes('test'))) hasTime = true;
+                if (c.includes('시간')) hasTime = true; // GITT 등 국문 수출 형식: "시험 시간"
                 if (c.includes('step') && c.includes('no')) hasStep = true;
                 if (c.includes('voltage') || c.includes('potential') || c.includes('전압') || c === 'v') hasVoltage = true;
                 if (c.includes('capacity') || c.includes('용량') || c.includes('cap') || c.includes('|q|')) hasCapacity = true;
                 if (c.includes('current') || c.includes('전류') || c === 'i' || c.includes('(a)') || c.includes('(ma)')) hasCurrent = true;
             }
         }
-        if ((hasTime && hasStep && hasVoltage) || (hasVoltage && hasCapacity) || (hasVoltage && hasCurrent)) {
+        if ((hasTime && hasStep && hasVoltage) || (hasVoltage && hasCapacity) || (hasVoltage && hasCurrent) || (hasTime && hasVoltage)) {
             return {
                 idx: i,
                 key: row.map(function (c) { return String(c === undefined || c === null ? '' : c).trim().toLowerCase(); }).join('|')

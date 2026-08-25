@@ -23,6 +23,7 @@
     var gittPoints = [];        // [{t(초), v(V)}]
     var gittSegments = [];      // 감지된 구간 목록
     var gittPulses = [];        // 유효 펄스 결과
+    var gittTrimT = null;       // formation 제외: 이 시각(초) 이전 데이터는 표시하지 않음
     var gittFilename = '';
     var gittWorker = null, gittJob = 0;
     var chartProfile = null, chartDiffusion = null;
@@ -267,6 +268,7 @@
 
             pulses.push({
                 mode: dEt > 0 ? 'Charge' : 'Discharge',
+                segIdx: k,
                 tau: seg.dur,
                 tStart: seg.t0,
                 E0: E0, E_tau: E_tau, E_eq: E_eq,
@@ -286,6 +288,16 @@
         gittPulses = pulses;
         gittPulses.pulseMode = pulseMode;
         gittPulses.restMode = restMode;
+
+        // [Formation 제외] formation은 펄스·완화 반복 없이 전압이 연속으로
+        // 오르내리는 구간 → 첫 유효 펄스 직전의 평형(완화) 구간부터만 표시한다.
+        // 사이클 수를 가정하지 않으므로 formation이 몇 사이클이든 동일하게 동작.
+        gittTrimT = null;
+        if (pulses.length) {
+            var firstSeg = segs[pulses[0].segIdx];
+            var prevSeg = segs[pulses[0].segIdx - 1];
+            gittTrimT = prevSeg ? prevSeg.t0 : firstSeg.t0;
+        }
 
         calcDiffusion();
         renderAll();
@@ -356,11 +368,16 @@
         if (!card) return;
         if (!gittPoints.length) { card.style.display = 'none'; return; }
         card.style.display = 'flex';
-        var totalH = (gittPoints[gittPoints.length - 1].t - gittPoints[0].t) / 3600;
+        // formation 제외 구간 기준 지표
+        var trimT = (gittTrimT != null) ? gittTrimT : gittPoints[0].t;
+        var nShow = 0;
+        for (var i = gittPoints.length - 1; i >= 0 && gittPoints[i].t >= trimT; i--) nShow++;
+        var totalH = (gittPoints[gittPoints.length - 1].t - trimT) / 3600;
+        var trimmedH = (trimT - gittPoints[0].t) / 3600;
         var nCh = gittPulses.filter(function (p) { return p.mode === 'Charge'; }).length;
         var html =
-            metricBox('데이터 포인트', gittPoints.length.toLocaleString(), '') +
-            metricBox('총 측정 시간', totalH.toFixed(1), 'h') +
+            metricBox('데이터 포인트', nShow.toLocaleString(), '') +
+            metricBox('분석 구간', totalH.toFixed(1) + ' h', trimmedH > 0.1 ? '(앞 ' + trimmedH.toFixed(1) + 'h formation 제외)' : '') +
             metricBox('감지된 펄스', String(gittPulses.length), '개') +
             metricBox('충전 / 방전', nCh + ' / ' + (gittPulses.length - nCh), '') +
             metricBox('펄스 시간 (자동)', gittPulses.pulseMode ? fmtDur(gittPulses.pulseMode) : '-', '') +
@@ -382,14 +399,25 @@
         if (chartProfile) { chartProfile.destroy(); chartProfile = null; }
         if (!gittPoints.length) return;
 
+        // formation 제외: gittTrimT 이후 구간만 표시 (시간축은 0부터 재시작)
+        var startIdx = 0;
+        var trimT = gittPoints[0].t;
+        if (gittTrimT != null) {
+            trimT = gittTrimT;
+            while (startIdx < gittPoints.length && gittPoints[startIdx].t < gittTrimT) startIdx++;
+        }
+        var nShow = gittPoints.length - startIdx;
+        if (nShow < 2) { startIdx = 0; trimT = gittPoints[0].t; nShow = gittPoints.length; }
+
         // 대용량 대비 다운샘플링 (~4000 포인트)
-        var stride = Math.max(1, Math.floor(gittPoints.length / 4000));
+        var stride = Math.max(1, Math.floor(nShow / 4000));
         var data = [];
-        for (var i = 0; i < gittPoints.length; i += stride) {
-            data.push({ x: gittPoints[i].t / 3600, y: gittPoints[i].v });
+        for (var i = startIdx; i < gittPoints.length; i += stride) {
+            data.push({ x: (gittPoints[i].t - trimT) / 3600, y: gittPoints[i].v });
         }
         var last = gittPoints[gittPoints.length - 1];
-        if (!data.length || data[data.length - 1].x !== last.t / 3600) data.push({ x: last.t / 3600, y: last.v });
+        var lastX = (last.t - trimT) / 3600;
+        if (!data.length || data[data.length - 1].x !== lastX) data.push({ x: lastX, y: last.v });
 
         chartProfile = new Chart(canvas.getContext('2d'), {
             type: 'line',

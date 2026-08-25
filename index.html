@@ -154,6 +154,18 @@
         .cyc-metric-label { font-size:11px; color:var(--text-muted); margin-bottom:6px; }
         .cyc-metric-value { font-size:22px; font-weight:700; color:#fff; }
         .cyc-metric-unit { font-size:11px; color:var(--text-muted); font-weight:500; margin-left:4px; }
+
+        /* 특수분석 드롭다운 (CV·GITT — voltage profile과 무관한 독립 분석 묶음) */
+        .special-menu { position:relative; display:inline-block; }
+        .special-menu-items { display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:300;
+            min-width:140px; background:#141b2d; border:1px solid var(--border-color); border-radius:8px;
+            padding:4px; box-shadow:0 8px 24px rgba(0,0,0,0.45); flex-direction:column; gap:2px; }
+        .special-menu.open .special-menu-items { display:flex; }
+        .special-menu-items .tab-btn { width:100%; justify-content:flex-start; }
+        .special-menu-caret { font-size:14px !important; margin-left:-2px; transition:transform 0.15s; }
+        .special-menu.open .special-menu-caret { transform:rotate(180deg); }
+        /* 하위(CV/GITT) 탭이 활성일 때 부모 트리거도 활성처럼 표시 */
+        .special-menu:has(.special-menu-items .tab-btn.active) .special-menu-trigger { color:#fff; background:rgba(255,255,255,0.08); border-radius:8px; }
     </style>
 </head>
 <body>
@@ -299,13 +311,24 @@
                     <button class="tab-btn" data-tab="tab-dqdv">
                         <span class="material-icons-round">waves</span> dQ/dV 분석
                     </button>
-                    <button class="tab-btn" id="btnTabCV">
-                        <span class="material-icons-round">multiline_chart</span> CV 분석
-                    </button>
-                    <!-- data-tab 없음: js/21-gitt.js 가 자체적으로 탭 전환 처리 (CV 탭과 동일 방식) -->
-                    <button class="tab-btn" id="btnTabGitt">
-                        <span class="material-icons-round">bolt</span> GITT 분석
-                    </button>
+                    <!-- 특수분석 드롭다운: voltage profile과 무관한 독립 분석(CV·GITT) 묶음.
+                         버튼 id(btnTabCV/btnTabGitt)는 그대로 유지 — 17-cv.js / 21-gitt.js 의
+                         기존 탭 전환 리스너가 변경 없이 동작한다. -->
+                    <div class="special-menu" id="specialMenu">
+                        <button class="tab-btn special-menu-trigger" id="btnSpecialMenu">
+                            <span class="material-icons-round">science</span> 특수분석
+                            <span class="material-icons-round special-menu-caret">expand_more</span>
+                        </button>
+                        <div class="special-menu-items" id="specialMenuItems">
+                            <button class="tab-btn" id="btnTabCV">
+                                <span class="material-icons-round">multiline_chart</span> CV 분석
+                            </button>
+                            <!-- data-tab 없음: js/21-gitt.js 가 자체적으로 탭 전환 처리 (CV 탭과 동일 방식) -->
+                            <button class="tab-btn" id="btnTabGitt">
+                                <span class="material-icons-round">bolt</span> GITT 분석
+                            </button>
+                        </div>
+                    </div>
                     <button class="tab-btn" data-tab="tab-combined">
                         <span class="material-icons-round">grid_view</span> 데이터 한눈에 보기
                     </button>
@@ -968,7 +991,7 @@
          기능별 분리 모듈 (클래식 스크립트) — 로딩 순서 반드시 유지
          전역(window) 스코프를 공유하므로 순서를 바꾸면 동작이 깨질 수 있습니다.
          ============================================================ -->
-    <script src="js/01-core.js?v=3.0.0"></script>
+    <script src="js/01-core.js?v=3.1.0"></script>
     <script src="js/02-file-upload.js?v=5.1.0"></script>
     <script src="js/03-analysis-controls.js?v=3.0.0"></script>
     <script src="js/04-database.js?v=3.0.0"></script>
@@ -976,7 +999,7 @@
     <script src="js/06-demo-update.js?v=3.0.0"></script>
     <script src="js/07-projects.js?v=3.0.0"></script>
     <script src="js/08-library-table.js?v=3.0.0"></script>
-    <script src="js/09-dataset-library.js?v=3.0.0"></script>
+    <script src="js/09-dataset-library.js?v=3.1.0"></script>
     <script src="js/10-data-processing.js?v=4.0.0"></script>
     <script src="js/11-analysis-metrics.js?v=3.1.0"></script>
     <script src="js/12-dqdv.js?v=3.0.0"></script>
@@ -988,6 +1011,6 @@
     <script src="js/17-cv.js?v=4.0.0"></script>
     <script src="js/18-cyclability.js?v=4.3.0"></script>
     <script src="js/20-ai-report.js?v=1.3.1"></script><!-- AI 소재 해석 팝업 연동 (분석 스냅샷 수집·전달) -->
-    <script src="js/21-gitt.js?v=1.0.0"></script><!-- GITT 분석 탭 (펄스 자동 감지 · 확산계수 계산) -->
+    <script src="js/21-gitt.js?v=1.1.0"></script><!-- GITT 분석 탭 (펄스 자동 감지 · 확산계수 계산) -->
 </body>
 </html>

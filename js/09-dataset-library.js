@@ -239,6 +239,15 @@ function switchActiveDataset(id) {
     const ds = datasetLibrary.find(d => d.id === id);
     if (!ds) return;
 
+    // GITT 데이터셋은 독립 분석(21-gitt.js 전용)이라 일반 분석으로 전환하지 않는다.
+    // 클릭 시 GITT 탭만 열어주고, 활성 데이터셋(일반 분석 상태)은 그대로 유지.
+    if (ds.experimentType === 'gitt') {
+        if (window.GittAnalyzer && typeof GittAnalyzer.activateTab === 'function') {
+            GittAnalyzer.activateTab();
+        }
+        return;
+    }
+
     activeDatasetId = id;
     isGittMode = false;
 
@@ -324,14 +333,16 @@ async function removeDataset(id) {
     datasetLibrary = datasetLibrary.filter(d => d.id !== id);
 
     if (activeDatasetId === id) {
-        if (datasetLibrary.length > 0) {
-            switchActiveDataset(datasetLibrary[datasetLibrary.length - 1].id);
+        // GITT 데이터셋은 활성 전환 대상이 아니므로 일반 분석 데이터셋 중에서 대체를 찾는다
+        const fallbackDs = [...datasetLibrary].reverse().find(d => d.experimentType !== 'gitt');
+        if (fallbackDs) {
+            switchActiveDataset(fallbackDs.id);
         } else {
             activeDatasetId = null;
             processedCycles = {};
             rawBatteryData = [];
             isGittMode = false;
-            
+
             const gittConfigPanel = document.getElementById('gittConfigPanel');
             if (gittConfigPanel) gittConfigPanel.style.display = 'none';
         }

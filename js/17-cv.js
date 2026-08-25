@@ -6,10 +6,19 @@
  * [사이클 분리 방식]
  *  - 파일에 'Cycle No.'(사이클 번호) 컬럼이 있으면 → 그 번호를 그대로 사용(측정기 기록과 100% 일치).
  *  - 없으면 → 전압 스윕 정점(vertex) 기반 자동 검출로 폴백(구형 Index/Voltage/Current 폼 호환).
+ *
+ * [다중 파일 비교]
+ *  - 여러 CV 파일을 올려 한 그래프에 겹쳐 볼 수 있다. 파일마다 색이 다르게 표시된다.
+ *  - 사이클은 '파일마다 개별 선택'한다(각 파일 행의 드롭다운). 피크 표도 파일별로 나온다.
  * ============================================================================ */
 (function () {
   'use strict';
-  var cvCycles = [], cvChart = null, cvWorker = null, cvJob = 0;
+  // 파일별 상태: { id, name, color, cycles:[{num,V,I,span,npts}], selNum }
+  var cvFiles = [], cvChart = null, cvWorker = null, cvJob = 0, _fid = 0;
+  var _queue = [], _parsing = false;
+  // 파일별 구분 색상 팔레트 (어두운 배경에서 잘 구분되는 색)
+  var CV_COLORS = ['#f59e0b', '#60a5fa', '#34d399', '#f472b6', '#a78bfa', '#fbbf24', '#22d3ee', '#fb7185', '#4ade80', '#c084fc'];
+
   function $(id) { return document.getElementById(id); }
   function setStatus(msg) { var el = $('cvStatus'); if (el) el.textContent = msg; }
 
@@ -23,31 +32,40 @@
     setTimeout(function () { if (cvChart) cvChart.resize(); }, 60);
   }
 
-  function onCVFile(file) {
-    if (!file) return;
-    setStatus('불러오는 중... (' + file.name + ')');
+  // ---- 업로드/파싱 (여러 파일을 순차 처리) ----
+  function addFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    for (var i = 0; i < fileList.length; i++) _queue.push(fileList[i]);
+    if (!_parsing) parseNext();
+  }
+
+  function parseNext() {
+    if (!_queue.length) { _parsing = false; return; }
+    _parsing = true;
+    var file = _queue.shift();
+    setStatus('불러오는 중... (' + file.name + ')' + (_queue.length ? ' · 대기 ' + _queue.length + '개' : ''));
     var ext = (file.name.split('.').pop() || '').toLowerCase();
     var reader = new FileReader();
     if (ext === 'xlsx' || ext === 'xls') {
-      reader.onload = function (e) { cvParseXlsx(e.target.result, file.name); };
-      reader.onerror = function () { setStatus('파일 읽기 실패'); };
+      reader.onload = function (e) { parseXlsxBuf(e.target.result, file.name); };
+      reader.onerror = function () { setStatus('파일 읽기 실패: ' + file.name); parseNext(); };
       reader.readAsArrayBuffer(file);
     } else {
-      reader.onload = function (e) { cvParseText(e.target.result, file.name); };
-      reader.onerror = function () { setStatus('파일 읽기 실패'); };
+      reader.onload = function (e) { onRows(splitText(e.target.result), file.name); };
+      reader.onerror = function () { setStatus('파일 읽기 실패: ' + file.name); parseNext(); };
       reader.readAsText(file);
     }
   }
 
-  function cvParseXlsx(buf, filename) {
+  function parseXlsxBuf(buf, filename) {
     try { if (!cvWorker) cvWorker = new Worker('js/xlsx-worker.js?v=4.0.0'); }
-    catch (err) { setStatus('워커 생성 실패: ' + err); return; }
+    catch (err) { setStatus('워커 생성 실패: ' + err); parseNext(); return; }
     var id = ++cvJob;
     var onMsg = function (ev) {
       if (!ev.data || ev.data.id !== id) return;
       cvWorker.removeEventListener('message', onMsg);
-      if (ev.data.ok && ev.data.jsonData) ingestRows(ev.data.jsonData, filename);
-      else setStatus('엑셀 파싱 실패: ' + (ev.data.error || ''));
+      if (ev.data.ok && ev.data.jsonData) onRows(ev.data.jsonData, filename);
+      else { setStatus('엑셀 파싱 실패: ' + (ev.data.error || '')); parseNext(); }
     };
     cvWorker.addEventListener('message', onMsg);
     cvWorker.onerror = function (er) { setStatus('워커 오류: ' + (er && er.message || '')); };
@@ -55,7 +73,7 @@
     catch (e) { cvWorker.postMessage({ id: id, data: buf, filename: filename }); }
   }
 
-  function cvParseText(text, filename) {
+  function splitText(text) {
     var lines = text.split(/\r?\n/), rows = [];
     for (var k = 0; k < lines.length; k++) {
       var line = lines[k];
@@ -63,16 +81,29 @@
       var delim = line.indexOf('\t') >= 0 ? '\t' : (line.indexOf(';') >= 0 ? ';' : ',');
       rows.push(line.split(delim));
     }
-    ingestRows(rows, filename);
+    return rows;
   }
 
-  function ingestRows(rows, filename) {
-    if (!rows || rows.length < 3) { setStatus('데이터가 비어 있습니다.'); return; }
-    var headerIdx = -1, vCol = -1, iCol = -1, cCol = -1;
-    for (var r = 0; r < Math.min(20, rows.length); r++) {
+  // 파싱 결과(2차원 배열)를 받아 파일 항목을 만든다
+  function onRows(rows, filename) {
+    var res = computeCycles(rows);
+    if (!res) { setStatus(filename + ': 전압/전류 컬럼을 찾지 못했거나 데이터가 부족합니다.'); parseNext(); return; }
+    var color = CV_COLORS[cvFiles.length % CV_COLORS.length];
+    cvFiles.push({ id: 'f' + (++_fid), name: filename, color: color, cycles: res.cycles, selNum: res.defaultNum });
+    refreshFileList();
+    renderAll();
+    setStatus('로드됨: ' + cvFiles.length + '개 파일');
+    parseNext();
+  }
+
+  // ---- 사이클 계산 (DOM/상태 건드리지 않는 순수 함수) ----
+  function computeCycles(rows) {
+    if (!rows || rows.length < 3) return null;
+    var headerIdx = -1, vCol = -1, iCol = -1, cCol = -1, r, c;
+    for (r = 0; r < Math.min(20, rows.length); r++) {
       var row = rows[r]; if (!row) continue;
       var vc = -1, ic = -1, cyc = -1;
-      for (var c = 0; c < row.length; c++) {
+      for (c = 0; c < row.length; c++) {
         var s = String(row[c] == null ? '' : row[c]).toLowerCase().trim();
         if (vc < 0 && (s.indexOf('voltage') >= 0 || s.indexOf('전압') >= 0 || s.indexOf('v vs') >= 0 || s === 'v' || s.indexOf('potential') >= 0)) vc = c;
         if (ic < 0 && (s.indexOf('current') >= 0 || s.indexOf('전류') >= 0 || s === 'i' || s.indexOf('(a)') >= 0 || s.indexOf('(ma)') >= 0 || s.indexOf('i(') >= 0)) ic = c;
@@ -81,22 +112,58 @@
       }
       if (vc >= 0 && ic >= 0) { headerIdx = r; vCol = vc; iCol = ic; cCol = cyc; break; }
     }
-    if (vCol < 0 || iCol < 0) { setStatus('전압/전류 컬럼을 찾지 못했습니다. 헤더를 확인해 주세요.'); return; }
-    var V = [], I = [], C = [];
+    if (vCol < 0 || iCol < 0) return null;
+    var V = [], I = [], C = [], hasC = (cCol >= 0);
     for (var r2 = headerIdx + 1; r2 < rows.length; r2++) {
       var row2 = rows[r2]; if (!row2) continue;
       var v = parseFloat(row2[vCol]), i = parseFloat(row2[iCol]);
       if (isNaN(v) || isNaN(i)) continue;
       V.push(v); I.push(i);
-      if (cCol >= 0) { var cn = parseFloat(row2[cCol]); C.push(isNaN(cn) ? null : cn); }
+      if (hasC) { var cn = parseFloat(row2[cCol]); C.push(isNaN(cn) ? null : cn); }
     }
-    if (V.length < 20) { setStatus('유효한 데이터 행이 부족합니다.'); return; }
-    // 파일에 'Cycle No.' 컬럼이 있으면 그 번호를 그대로 사용, 없으면 자동 검출로 폴백
-    if (cCol >= 0) buildCyclesFromColumn(V, I, C, filename);
-    else buildCycles(V, I, filename);
+    if (V.length < 20) return null;
+    return hasC ? cyclesFromColumn(V, I, C) : cyclesAuto(V, I);
   }
 
-function detectCVCycles(V, I) {
+  // [신규] 파일에 기록된 'Cycle No.' 값을 그대로 사용
+  function cyclesFromColumn(V, I, C) {
+    var groups = {}, order = [], k;
+    for (k = 0; k < V.length; k++) {
+      var num = C[k]; if (num == null) continue;
+      if (!Object.prototype.hasOwnProperty.call(groups, num)) { groups[num] = { v: [], i: [] }; order.push(num); }
+      groups[num].v.push(V[k]); groups[num].i.push(I[k]);
+    }
+    order.sort(function (a, b) { return a - b; });
+    if (!order.length) return null;
+    var globalSpan = 0;
+    order.forEach(function (num) {
+      var g = groups[num], mn = Infinity, mx = -Infinity;
+      for (var j = 0; j < g.v.length; j++) { if (g.v[j] < mn) mn = g.v[j]; if (g.v[j] > mx) mx = g.v[j]; }
+      g.span = (mx - mn) || 0; if (g.span > globalSpan) globalSpan = g.span;
+    });
+    var cycles = [];
+    order.forEach(function (num) {
+      var g = groups[num];
+      var d = downsample(g.v, g.i, 0, g.v.length, 6000);
+      cycles.push({ num: num, V: d.v, I: d.i, span: g.span, npts: g.v.length });
+    });
+    var defaultNum = cycles[0].num;
+    for (k = 0; k < cycles.length; k++) { if (cycles[k].span >= globalSpan * 0.7) { defaultNum = cycles[k].num; break; } }
+    return { cycles: cycles, defaultNum: defaultNum };
+  }
+
+  // [폴백] 사이클 번호가 없을 때: 전압 스윕 정점으로 자동 검출
+  function cyclesAuto(V, I) {
+    var cyc = detectCVCycles(V, I), cycles = [];
+    cyc.forEach(function (c) {
+      var d = downsample(V, I, c.a, c.end, 6000);
+      cycles.push({ num: c.num, V: d.v, I: d.i, span: 0, npts: c.end - c.a });
+    });
+    if (!cycles.length) return null;
+    return { cycles: cycles, defaultNum: cycles[Math.floor(cycles.length / 2)].num };
+  }
+
+  function detectCVCycles(V, I) {
     // 정점(vertex) 기반 검출: 전압이 상단/하단 정점 부근에 도달하는 지점을 정점으로 잡고,
     // 하단정점 → 상단정점 → 하단정점 을 한 사이클(닫힌 루프)로 묶는다. (노이즈에 견고)
     var n = V.length, k;
@@ -143,101 +210,92 @@ function detectCVCycles(V, I) {
     return { v: v, i: ii };
   }
 
-  // 드롭다운을 현재 cvCycles(사이클 목록)로 채운다
-  function fillCycleSelect() {
-    var sel = $('cvCycleSelect'); if (!sel) return;
-    sel.innerHTML = '';
-    cvCycles.forEach(function (cc) {
-      var o = document.createElement('option');
-      o.value = cc.num; o.textContent = cc.num + ' 사이클';
-      sel.appendChild(o);
+  // ---- 파일 목록 UI (색상 · 사이클 개별 선택 · 제거) ----
+  function refreshFileList() {
+    var el = $('cvFileList'); if (!el) return;
+    el.innerHTML = '';
+    cvFiles.forEach(function (f) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:10px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:8px 12px; flex-wrap:wrap;';
+      var sw = document.createElement('span');
+      sw.style.cssText = 'width:14px; height:14px; border-radius:3px; flex:none; background:' + f.color + ';';
+      var nm = document.createElement('span');
+      nm.textContent = f.name;
+      nm.title = f.name;
+      nm.style.cssText = 'font-size:12px; color:var(--text); flex:1; min-width:140px; word-break:break-all;';
+      var lab = document.createElement('span');
+      lab.textContent = '사이클'; lab.style.cssText = 'font-size:11px; color:var(--text-muted);';
+      var sel = document.createElement('select');
+      sel.className = 'select-field'; sel.style.cssText = 'margin-bottom:0; height:30px; width:110px;';
+      f.cycles.forEach(function (cc) { var o = document.createElement('option'); o.value = cc.num; o.textContent = cc.num + ' 사이클'; sel.appendChild(o); });
+      sel.value = f.selNum;
+      sel.addEventListener('change', function () { f.selNum = parseFloat(this.value); renderAll(); });
+      var rm = document.createElement('button');
+      rm.textContent = '✕'; rm.title = '이 파일 제거';
+      rm.style.cssText = 'background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px;';
+      rm.addEventListener('click', function () { removeFile(f.id); });
+      row.appendChild(sw); row.appendChild(nm); row.appendChild(lab); row.appendChild(sel); row.appendChild(rm);
+      el.appendChild(row);
     });
   }
 
-  // [신규] 파일에 기록된 'Cycle No.' 값을 그대로 사용해 사이클을 분리한다.
-  //  - 같은 번호의 행을 등장 순서대로 묶어 하나의 사이클(닫힌 I-V 루프)로 만든다.
-  //  - 자동 검출 로직을 쓰지 않으므로, 측정기가 저장한 사이클 번호와 100% 일치한다.
-  function buildCyclesFromColumn(V, I, C, filename) {
-    cvCycles = [];
-    var groups = {}, order = [], k;
-    for (k = 0; k < V.length; k++) {
-      var num = C[k];
-      if (num == null) continue;
-      if (!Object.prototype.hasOwnProperty.call(groups, num)) { groups[num] = { v: [], i: [] }; order.push(num); }
-      groups[num].v.push(V[k]); groups[num].i.push(I[k]);
-    }
-    order.sort(function (a, b) { return a - b; }); // 사이클 번호 오름차순
-    var globalSpan = 0;
-    order.forEach(function (num) {
-      var g = groups[num], mn = Infinity, mx = -Infinity;
-      for (var j = 0; j < g.v.length; j++) { if (g.v[j] < mn) mn = g.v[j]; if (g.v[j] > mx) mx = g.v[j]; }
-      g.span = (mx - mn) || 0; if (g.span > globalSpan) globalSpan = g.span;
-    });
-    order.forEach(function (num) {
-      var g = groups[num];
-      var d = downsample(g.v, g.i, 0, g.v.length, 6000);
-      cvCycles.push({ num: num, V: d.v, I: d.i, span: g.span, npts: g.v.length });
-    });
-    if (!cvCycles.length) { setStatus('사이클 번호(Cycle No.)를 읽지 못했습니다.'); return; }
-    fillCycleSelect();
-    setStatus(filename + ' · 파일 기록 사이클 ' + cvCycles.length + '개 (' + order.join(', ') + ')');
-    // 기본 표시: 전압 구간이 충분히 넓은(정상 루프) 첫 사이클 — 부분/형성 구간을 피함
-    var startNum = cvCycles[0].num;
-    for (k = 0; k < cvCycles.length; k++) { if (cvCycles[k].span >= globalSpan * 0.7) { startNum = cvCycles[k].num; break; } }
-    var sel = $('cvCycleSelect'); if (sel) sel.value = startNum;
-    renderCycle(startNum);
+  function removeFile(id) {
+    cvFiles = cvFiles.filter(function (f) { return f.id !== id; });
+    refreshFileList();
+    renderAll();
+    setStatus(cvFiles.length ? (cvFiles.length + '개 파일') : 'CV 파일을 업로드하세요.');
   }
 
-  // [폴백] 파일에 사이클 번호가 없을 때: 전압 스윕 정점으로 자동 검출
-  function buildCycles(V, I, filename) {
-    var cyc = detectCVCycles(V, I);
-    cvCycles = [];
-    cyc.forEach(function (c) {
-      var d = downsample(V, I, c.a, c.end, 6000);
-      cvCycles.push({ num: c.num, V: d.v, I: d.i, span: 0, npts: c.end - c.a });
+  function getCycle(f, num) {
+    for (var k = 0; k < f.cycles.length; k++) { if (f.cycles[k].num == num) return f.cycles[k]; }
+    return null;
+  }
+
+  // ---- 그래프 + 피크표 렌더 (모든 파일 오버레이) ----
+  function renderAll() {
+    var datasets = [], xmin = Infinity, xmax = -Infinity;
+    cvFiles.forEach(function (f) {
+      var cc = getCycle(f, f.selNum); if (!cc) return;
+      var pts = [], j;
+      for (j = 0; j < cc.V.length; j++) {
+        pts.push({ x: cc.V[j], y: cc.I[j] * 1000 });
+        if (cc.V[j] < xmin) xmin = cc.V[j];
+        if (cc.V[j] > xmax) xmax = cc.V[j];
+      }
+      datasets.push({
+        label: f.name + ' · ' + f.selNum + '사이클',
+        data: pts, borderColor: f.color, backgroundColor: f.color,
+        borderWidth: 1.3, pointRadius: 0, showLine: true, fill: false, tension: 0
+      });
     });
-    if (!cvCycles.length) { setStatus('사이클을 검출하지 못했습니다.'); return; }
-    fillCycleSelect();
-    setStatus(filename + ' · 총 ' + cvCycles.length + ' 사이클 (자동 검출)');
-    // 1번 사이클은 형성(formation) 단계라 이상해 보일 수 있어, 기본값은 중간 사이클로 표시
-    var startNum = cvCycles[Math.floor(cvCycles.length / 2)].num;
-    var sel = $('cvCycleSelect'); if (sel) sel.value = startNum;
-    renderCycle(startNum);
+    renderCVChart(datasets, xmin, xmax);
+    renderPeakTable();
   }
 
-  function renderCycle(num) {
-    var cc = null, k;
-    for (k = 0; k < cvCycles.length; k++) { if (cvCycles[k].num == num) { cc = cvCycles[k]; break; } }
-    if (!cc) return;
-    var data = [], j;
-    for (j = 0; j < cc.V.length; j++) data.push({ x: cc.V[j], y: cc.I[j] * 1000 });
-    renderCVChart(data, num);
-    renderPeakTable(detectPeaks(cc, getSensitivity()));
-  }
-
-  function renderCVChart(data, num) {
+  function renderCVChart(datasets, xmin, xmax) {
     var el = $('chartCV'); if (!el || typeof Chart === 'undefined') return;
     var ctx = el.getContext('2d');
-    if (cvChart) cvChart.destroy();
-    // 데이터 기준 x축(전압) 범위를 명시 → CV 루프(시작·끝 전압이 동일)에서 축이 붕괴되는 문제 방지
-    var xmin = Infinity, xmax = -Infinity;
-    for (var d = 0; d < data.length; d++) { var px = data[d].x; if (px < xmin) xmin = px; if (px > xmax) xmax = px; }
+    if (cvChart) { cvChart.destroy(); cvChart = null; }
+    if (!datasets.length) return;
+    // 데이터 기준 x축(전압) 범위를 명시 → CV 루프(시작·끝 전압 동일)에서 축 붕괴 방지
     if (!isFinite(xmin)) { xmin = 0; xmax = 1; }
     cvChart = new Chart(ctx, {
       type: 'line',
-      data: { datasets: [{ label: num + ' 사이클', data: data, borderColor: '#f59e0b', borderWidth: 1.3, pointRadius: 0, showLine: true, fill: false, tension: 0 }] },
+      data: { datasets: datasets },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'nearest', intersect: false },
         scales: {
           x: { type: 'linear', min: xmin, max: xmax, title: { display: true, text: 'Voltage (V)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
           y: { title: { display: true, text: 'Current (mA)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
         },
-        plugins: { legend: { display: false }, tooltip: { enabled: true } }
+        plugins: {
+          legend: { display: true, labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } } },
+          tooltip: { enabled: true }
+        }
       }
     });
   }
-  // 피크 검출 민감도(고정값). UI 입력은 제거했고, 내부 자동 검출은 이 값으로 동작한다.
-  function getSensitivity() { return 0.08; }
 
   function smooth(arr, w) {
     var n = arr.length; if (n < w || w < 3) return arr.slice();
@@ -283,38 +341,48 @@ function detectCVCycles(V, I) {
     return picked.map(function (cd) { return { v: Vseg[cd.idx], i: Iseg[cd.idx] }; });
   }
 
-  function detectPeaks(cc, sens) {
+  function detectPeaks(cc) {
     // 산화(anodic)=양(+)전류 구간, 환원(cathodic)=음(-)전류 구간으로 나눠 피크 검출
-    var aV = [], aI = [], cV = [], cI = [], k;
+    var aV = [], aI = [], cV = [], cI = [], k, SENS = 0.08;
     for (k = 0; k < cc.V.length; k++) {
       if (cc.I[k] > 0) { aV.push(cc.V[k]); aI.push(cc.I[k]); }
       else if (cc.I[k] < 0) { cV.push(cc.V[k]); cI.push(cc.I[k]); }
     }
-    return { anodic: findPeaks(aV, aI, true, sens), cathodic: findPeaks(cV, cI, false, sens) };
+    return { anodic: findPeaks(aV, aI, true, SENS), cathodic: findPeaks(cV, cI, false, SENS) };
   }
 
-  function renderPeakTable(peaks) {
+  function renderPeakTable() {
     var el = $('cvPeakTable'); if (!el) return;
+    if (!cvFiles.length) { el.innerHTML = '<span style="color:#6b7280; font-size:12px;">파일을 로드하면 산화·환원 피크가 표시됩니다.</span>'; return; }
     function rowsFor(list, label, color) {
-      if (!list.length) return '<tr><td style="padding:4px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:4px 6px;color:#6b7280;" colspan="2">검출된 피크 없음 (민감도를 낮춰보세요)</td></tr>';
+      if (!list.length) return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;color:#6b7280;" colspan="2">검출된 피크 없음</td></tr>';
       return list.map(function (p) {
-        return '<tr><td style="padding:4px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:4px 6px;">' + p.v.toFixed(3) + ' V</td><td style="padding:4px 6px;color:#9ca3af;">' + (p.i * 1000).toFixed(3) + ' mA</td></tr>';
+        return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;">' + p.v.toFixed(3) + ' V</td><td style="padding:3px 6px;color:#9ca3af;">' + (p.i * 1000).toFixed(3) + ' mA</td></tr>';
       }).join('');
     }
-    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="color:#9ca3af;text-align:left;border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:4px 6px;">구분</th><th style="padding:4px 6px;">Voltage</th><th style="padding:4px 6px;">Peak Current</th></tr></thead><tbody>' + rowsFor(peaks.anodic, '산화 (Anodic)', '#f59e0b') + rowsFor(peaks.cathodic, '환원 (Cathodic)', '#60a5fa') + '</tbody></table>';
+    var html = '';
+    cvFiles.forEach(function (f) {
+      var cc = getCycle(f, f.selNum);
+      var pk = cc ? detectPeaks(cc) : { anodic: [], cathodic: [] };
+      html += '<div style="margin-bottom:12px;">'
+        + '<div style="font-size:12px; font-weight:600; margin-bottom:4px; color:' + f.color + ';">● ' + f.name + ' · ' + f.selNum + '사이클</div>'
+        + '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+        + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">구분</th><th style="padding:3px 6px;">Voltage</th><th style="padding:3px 6px;">Peak Current</th></tr></thead>'
+        + '<tbody>' + rowsFor(pk.anodic, '산화 (Anodic)', '#f59e0b') + rowsFor(pk.cathodic, '환원 (Cathodic)', '#60a5fa') + '</tbody></table></div>';
+    });
+    el.innerHTML = html;
   }
 
   document.addEventListener('DOMContentLoaded', function () {
     var btn = $('btnTabCV'); if (btn) btn.addEventListener('click', activateCVTab);
     var fileInput = $('cvFileInput');
-    if (fileInput) fileInput.addEventListener('change', function (e) { if (e.target.files && e.target.files[0]) onCVFile(e.target.files[0]); e.target.value = ''; });
+    if (fileInput) fileInput.addEventListener('change', function (e) { if (e.target.files && e.target.files.length) addFiles(e.target.files); e.target.value = ''; });
     var drop = $('cvDropZone');
     if (drop) {
       drop.addEventListener('click', function () { if (fileInput) fileInput.click(); });
       drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('drag-active'); });
       drop.addEventListener('dragleave', function () { drop.classList.remove('drag-active'); });
-      drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('drag-active'); if (e.dataTransfer.files && e.dataTransfer.files[0]) onCVFile(e.dataTransfer.files[0]); });
+      drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('drag-active'); if (e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
     }
-    var sel = $('cvCycleSelect'); if (sel) sel.addEventListener('change', function () { if (this.value) renderCycle(this.value); });
   });
 })();

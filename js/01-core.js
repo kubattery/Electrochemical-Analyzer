@@ -167,15 +167,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     initExportFeatures();
     initRateToggle(); // C-rate 모드 전환 이벤트 초기화
     initDatasetLibrary(); // 데이터셋 라이브러리 이벤트 초기화
-    // GITT 분석 버튼 클릭 시 gitt.html 새 탭으로 열기 리스너
-    const btnGittComingSoon = document.getElementById('btnGittComingSoon');
-    if (btnGittComingSoon) {
-        btnGittComingSoon.addEventListener('click', (e) => {
-            e.preventDefault();
-            window.open('gitt.html', '_blank');
-        });
-    }
-
     // 최초 로드 시 기본 분석 모드 UI 정렬 수행 (탭 숨김, 사이드바 정렬 등)
     setAnalysisMode('general');
 

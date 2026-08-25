@@ -144,7 +144,7 @@
       })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="style.css?v=2.11.0">
+    <link rel="stylesheet" href="style.css?v=2.10.0">
     <!-- Rate Capability / Cyclability 탭 분리: 잠금 메시지·Cyclability 뷰 스타일 -->
     <style>
         .rc-hint { text-align:center; padding:22px; font-size:13px; color:var(--text-muted); }
@@ -260,13 +260,6 @@
                     <p class="library-empty-msg">업로드한 데이터가 여기에 저장됩니다.</p>
                 </div>
             </div>
-            <!-- AI 소재 해석: 탭 전환이 아니라 독립 팝업 창(ai-report.html)을 연다 -->
-            <div class="sidebar-card ai-report-card">
-                <button class="btn btn-primary btn-ai-report" id="btnAiReport">
-                    <span class="material-icons-round">psychology</span> AI 소재 해석
-                </button>
-                <p class="ai-report-hint">선택한 데이터의 지표를 해석합니다. 기본 해석은 API 키 없이 바로 나옵니다.</p>
-            </div>
             <div class="sidebar-footer">
                 <p>&copy; 2026 Antigravity. 이차전지 소재 데이터 분석 툴.</p>
             </div>
@@ -302,12 +295,16 @@
                     <button class="tab-btn" id="btnTabCV">
                         <span class="material-icons-round">multiline_chart</span> CV 분석
                     </button>
-                    <button class="tab-btn tab-btn-coming-soon" id="btnGittComingSoon">
+                    <!-- data-tab 없음: js/21-gitt.js 가 자체적으로 탭 전환 처리 (CV 탭과 동일 방식) -->
+                    <button class="tab-btn" id="btnTabGitt">
                         <span class="material-icons-round">bolt</span> GITT 분석
-                        <span class="coming-soon-badge">SOON</span>
                     </button>
                     <button class="tab-btn" data-tab="tab-combined">
                         <span class="material-icons-round">grid_view</span> 데이터 한눈에 보기
+                    </button>
+                    <!-- data-tab 없음: 탭 전환이 아니라 독립 팝업 창(ai-report.html)을 연다 -->
+                    <button class="tab-btn" id="btnAiReport">
+                        <span class="material-icons-round">psychology</span> AI 소재 해석
                     </button>
                 </div>
             </header>
@@ -830,6 +827,101 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Tab: GITT 분석 (독립 모듈, js/21-gitt.js) -->
+                <div class="tab-panel" id="tab-gitt">
+                    <div style="display:flex; flex-direction:column; gap:14px; height:100%; overflow-y:auto;">
+                        <!-- 업로드 + 파라미터 바 -->
+                        <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:14px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+                            <div id="gittDropZone" style="flex:1; min-width:220px; border:1.5px dashed rgba(255,255,255,0.18); border-radius:8px; padding:12px 14px; text-align:center; cursor:pointer; color:var(--text-muted); font-size:12px;">
+                                <span class="material-icons-round" style="vertical-align:middle; font-size:18px; margin-right:4px;">upload_file</span>
+                                GITT 파일(.xlsx / .csv)을 드래그하거나 클릭해 업로드 — 펄스·완화 구간 자동 감지
+                            </div>
+                            <input type="file" id="gittFileInput" accept=".xlsx,.xls,.csv,.txt" hidden>
+                            <div>
+                                <label style="display:block; font-size:10px; color:var(--text-muted); margin-bottom:4px;">표시 모드</label>
+                                <select id="gittShowMode" class="select-field" style="margin-bottom:0; height:32px; width:110px;">
+                                    <option value="both">전체</option>
+                                    <option value="discharge">방전만</option>
+                                    <option value="charge">충전만</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="gittStatus" style="font-size:12px; color:var(--text-muted); margin-top:-6px;">GITT 파일을 업로드하세요. 펄스 시간(τ)·완화 시간은 파일에서 자동으로 읽습니다.</div>
+
+                        <!-- 자동 감지 요약 카드 -->
+                        <div id="gittDetectCard" style="display:none; gap:10px; flex-wrap:wrap;"></div>
+
+                        <!-- 차트 2개: 왼쪽 = 시간-전압, 오른쪽 = 전압-logD -->
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; min-height:340px;">
+                            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:14px; display:flex; flex-direction:column;">
+                                <h3 class="chart-title" style="margin:0 0 8px 0;">전압 프로파일 (Voltage vs. Time)</h3>
+                                <div style="flex:1; position:relative; min-height:280px;">
+                                    <canvas id="chartGittProfile"></canvas>
+                                </div>
+                                <div style="font-size:11px; color:#9ca3af; text-align:center; margin-top:6px; opacity:0.8;">🔍 마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원래대로</div>
+                            </div>
+                            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:14px; display:flex; flex-direction:column;">
+                                <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+                                    <h3 class="chart-title" style="margin:0;">이온 확산계수 (log D vs. Voltage)</h3>
+                                    <!-- D 계산 파라미터: 입력 즉시 오른쪽 차트·테이블에 반영 -->
+                                    <div style="display:flex; gap:8px; align-items:flex-end;">
+                                        <div>
+                                            <label style="display:block; font-size:9px; color:var(--text-muted); margin-bottom:2px;">Loading (mg/cm²)</label>
+                                            <input type="number" id="gittLoading" class="select-field" placeholder="예: 3.2" step="0.01" min="0" style="margin-bottom:0; height:26px; width:86px; font-size:11px;">
+                                        </div>
+                                        <div>
+                                            <label style="display:block; font-size:9px; color:var(--text-muted); margin-bottom:2px;">V_M (cm³/mol)</label>
+                                            <input type="number" id="gittVol" class="select-field" placeholder="예: 20.5" step="0.01" min="0" style="margin-bottom:0; height:26px; width:86px; font-size:11px;">
+                                        </div>
+                                        <div>
+                                            <label style="display:block; font-size:9px; color:var(--text-muted); margin-bottom:2px;">M_B (g/mol)</label>
+                                            <input type="number" id="gittMolarMass" class="select-field" placeholder="예: 101.9" step="0.001" min="0" style="margin-bottom:0; height:26px; width:86px; font-size:11px;">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="flex:1; position:relative; min-height:280px;">
+                                    <canvas id="chartGittDiffusion"></canvas>
+                                </div>
+                                <div id="gittParamHint" style="font-size:11px; color:#9ca3af; text-align:center; margin-top:6px; opacity:0.8;">Loading · V_M · M_B 를 입력하면 D가 계산되어 표시됩니다.</div>
+                            </div>
+                        </div>
+
+                        <!-- 결과 테이블 -->
+                        <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <div style="font-weight:600; font-size:13px; display:flex; align-items:center; gap:6px;">
+                                    <span class="material-icons-round" style="font-size:18px; color:var(--color-primary);">table_chart</span>
+                                    펄스별 분석 결과
+                                </div>
+                                <button class="btn btn-secondary" id="btnExportGittXlsx" style="height:30px; font-size:11px;">
+                                    <span class="material-icons-round" style="font-size:14px;">download</span> 결과 내보내기 (.xlsx)
+                                </button>
+                            </div>
+                            <div style="max-height:320px; overflow-y:auto;">
+                                <table id="tableGittSummary" style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+                                    <thead style="position:sticky; top:0; background:#141b2d; z-index:5;">
+                                        <tr>
+                                            <th style="padding:6px 8px;">모드</th>
+                                            <th style="padding:6px 8px;">회차</th>
+                                            <th style="padding:6px 8px;">Pulse #</th>
+                                            <th style="padding:6px 8px;">τ (s)</th>
+                                            <th style="padding:6px 8px;">E₀ (V)</th>
+                                            <th style="padding:6px 8px;">E_τ (V)</th>
+                                            <th style="padding:6px 8px;">E_eq (V)</th>
+                                            <th style="padding:6px 8px;">ΔEt (V)</th>
+                                            <th style="padding:6px 8px;">ΔEs (V)</th>
+                                            <th style="padding:6px 8px;">D (cm²/s)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:40px 0;">GITT 파일을 업로드하면 펄스별 분석 결과가 표시됩니다.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -879,5 +971,6 @@
     <script src="js/17-cv.js?v=4.0.0"></script>
     <script src="js/18-cyclability.js?v=4.3.0"></script>
     <script src="js/20-ai-report.js?v=1.3.1"></script><!-- AI 소재 해석 팝업 연동 (분석 스냅샷 수집·전달) -->
+    <script src="js/21-gitt.js?v=1.0.0"></script><!-- GITT 분석 탭 (펄스 자동 감지 · 확산계수 계산) -->
 </body>
 </html>

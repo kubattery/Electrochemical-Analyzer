@@ -144,7 +144,7 @@
       })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="style.css?v=2.10.0">
+    <link rel="stylesheet" href="style.css?v=2.11.0">
     <!-- Rate Capability / Cyclability 탭 분리: 잠금 메시지·Cyclability 뷰 스타일 -->
     <style>
         .rc-hint { text-align:center; padding:22px; font-size:13px; color:var(--text-muted); }
@@ -260,6 +260,13 @@
                     <p class="library-empty-msg">업로드한 데이터가 여기에 저장됩니다.</p>
                 </div>
             </div>
+            <!-- AI 소재 해석: 탭 전환이 아니라 독립 팝업 창(ai-report.html)을 연다 -->
+            <div class="sidebar-card ai-report-card">
+                <button class="btn btn-primary btn-ai-report" id="btnAiReport">
+                    <span class="material-icons-round">psychology</span> AI 소재 해석
+                </button>
+                <p class="ai-report-hint">선택한 데이터의 지표를 해석합니다. 기본 해석은 API 키 없이 바로 나옵니다.</p>
+            </div>
             <div class="sidebar-footer">
                 <p>&copy; 2026 Antigravity. 이차전지 소재 데이터 분석 툴.</p>
             </div>
@@ -301,10 +308,6 @@
                     </button>
                     <button class="tab-btn" data-tab="tab-combined">
                         <span class="material-icons-round">grid_view</span> 데이터 한눈에 보기
-                    </button>
-                    <!-- data-tab 없음: 탭 전환이 아니라 독립 팝업 창(ai-report.html)을 연다 -->
-                    <button class="tab-btn" id="btnAiReport">
-                        <span class="material-icons-round">psychology</span> AI 소재 해석
                     </button>
                 </div>
             </header>

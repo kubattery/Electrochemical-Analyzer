@@ -236,11 +236,8 @@ function detectCVCycles(V, I) {
       }
     });
   }
-  function getSensitivity() {
-    var el = $('cvSensitivity'), v = el ? parseFloat(el.value) : 0.08;
-    if (isNaN(v) || v <= 0) v = 0.08;
-    return v;
-  }
+  // 피크 검출 민감도(고정값). UI 입력은 제거했고, 내부 자동 검출은 이 값으로 동작한다.
+  function getSensitivity() { return 0.08; }
 
   function smooth(arr, w) {
     var n = arr.length; if (n < w || w < 3) return arr.slice();
@@ -319,6 +316,5 @@ function detectCVCycles(V, I) {
       drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('drag-active'); if (e.dataTransfer.files && e.dataTransfer.files[0]) onCVFile(e.dataTransfer.files[0]); });
     }
     var sel = $('cvCycleSelect'); if (sel) sel.addEventListener('change', function () { if (this.value) renderCycle(this.value); });
-    var sens = $('cvSensitivity'); if (sens) sens.addEventListener('change', function () { var s = $('cvCycleSelect'); if (s && s.value) renderCycle(s.value); });
   });
 })();

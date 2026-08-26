@@ -247,7 +247,14 @@ function switchActiveDataset(id) {
         }
         return;
     }
-
+    // CV 데이터셋도 독립 분석(17-cv.js 전용) — 클릭 시 CV 탭을 열고 해당 데이터를 표시.
+    if (ds.experimentType === 'cv') {
+        if (window.CVAnalyzer && typeof CVAnalyzer.showDataset === 'function') {
+            CVAnalyzer.showDataset(ds.id);
+        }
+        return;
+    }
+    
     activeDatasetId = id;
     isGittMode = false;
 
@@ -330,11 +337,17 @@ function switchActiveDataset(id) {
  * 데이터셋 라이브러리 삭제
  */
 async function removeDataset(id) {
+    const removedDs = datasetLibrary.find(d => d.id === id);
     datasetLibrary = datasetLibrary.filter(d => d.id !== id);
 
+    // CV 데이터셋이면 CV 그래프(오버레이)에서도 제거하여 동기화
+    if (removedDs && removedDs.experimentType === 'cv' && window.CVAnalyzer && typeof CVAnalyzer.removeDataset === 'function') {
+        CVAnalyzer.removeDataset(id);
+    }
+
     if (activeDatasetId === id) {
-        // GITT 데이터셋은 활성 전환 대상이 아니므로 일반 분석 데이터셋 중에서 대체를 찾는다
-        const fallbackDs = [...datasetLibrary].reverse().find(d => d.experimentType !== 'gitt');
+        // GITT·CV 데이터셋은 활성 전환 대상이 아니므로 일반 분석 데이터셋 중에서 대체를 찾는다
+        const fallbackDs = [...datasetLibrary].reverse().find(d => d.experimentType !== 'gitt' && d.experimentType !== 'cv');
         if (fallbackDs) {
             switchActiveDataset(fallbackDs.id);
         } else {

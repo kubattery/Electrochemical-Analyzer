@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // 처음 웹사이트 진입 시에는 무조건 일반 분석 창만 띄우도록 제어합니다.
             // 일반 분석 데이터셋 중 가장 최신 것(가장 마지막에 추가된 것)을 찾아서 활성화합니다.
-            const lastGeneralDs = [...datasetLibrary].reverse().find(ds => !ds.isGitt);
+            const lastGeneralDs = [...datasetLibrary].reverse().find(ds => !ds.isGitt && ds.experimentType !== 'cv');
             if (lastGeneralDs) {
                 switchActiveDataset(lastGeneralDs.id);
             } else {

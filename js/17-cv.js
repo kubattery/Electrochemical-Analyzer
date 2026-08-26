@@ -89,7 +89,9 @@
     var res = computeCycles(rows);
     if (!res) { setStatus(filename + ': 전압/전류 컬럼을 찾지 못했거나 데이터가 부족합니다.'); parseNext(); return; }
     var color = CV_COLORS[cvFiles.length % CV_COLORS.length];
-    cvFiles.push({ id: 'f' + (++_fid), name: filename, color: color, cycles: res.cycles, selNum: res.defaultNum });
+    var entry = { id: 'cv' + Date.now() + '_' + (++_fid), name: filename, color: color, cycles: res.cycles, selNum: res.defaultNum };
+    cvFiles.push(entry);
+    registerCvDataset(entry);   // 데이터 라이브러리(사이드바)에 등록
     refreshFileList();
     renderAll();
     setStatus('로드됨: ' + cvFiles.length + '개 파일');
@@ -244,6 +246,17 @@
     refreshFileList();
     renderAll();
     setStatus(cvFiles.length ? (cvFiles.length + '개 파일') : 'CV 파일을 업로드하세요.');
+    // 데이터 라이브러리 항목도 함께 제거(동기화)
+    if (typeof datasetLibrary !== 'undefined') {
+      var idx = -1, i;
+      for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { idx = i; break; } }
+      if (idx >= 0) {
+        datasetLibrary.splice(idx, 1);
+        if (typeof deleteDatasetFromDB === 'function') { try { Promise.resolve(deleteDatasetFromDB(id)).catch(function () {}); } catch (e) {} }
+        if (typeof renderDatasetLibraryUI === 'function') renderDatasetLibraryUI();
+        if (typeof renderLibraryTable === 'function') renderLibraryTable();
+      }
+    }
   }
 
   function getCycle(f, num) {
@@ -372,6 +385,81 @@
     });
     el.innerHTML = html;
   }
+
+  // ==========================================================================
+  // 데이터 라이브러리 연동
+  //  - CV 파일을 사이드바 '데이터 라이브러리'에 등록한다(GITT와 동일한 방식).
+  //  - experimentType:'cv' 라서 일반 분석(rate/cycle)으로 전환되지 않고, 클릭하면
+  //    09-dataset-library.js 의 가드가 CVAnalyzer.showDataset(id) 를 호출해 CV 탭을 연다.
+  //  - cvPayload 에 사이클 데이터를 저장해 새로고침(IndexedDB 복원) 후에도 다시 볼 수 있다.
+  // ==========================================================================
+  function registerCvDataset(f) {
+    if (typeof datasetLibrary === 'undefined' || typeof normalizeDataset !== 'function') return;
+    try {
+      var now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      var metric = 'CV · 사이클 ' + f.cycles.length + '개';
+      var payload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
+      var existing = null, i;
+      for (i = 0; i < datasetLibrary.length; i++) {
+        if (datasetLibrary[i].experimentType === 'cv' && datasetLibrary[i].filename === f.name) { existing = datasetLibrary[i]; break; }
+      }
+      if (existing) {
+        f.id = existing.id;                 // 같은 파일 재업로드: CV 파일 id 를 기존 항목 id 로 맞춤
+        existing.keyMetric = metric;
+        existing.lastConvertedAt = now;
+        existing.conversionStatus = 'converted';
+        existing.cvPayload = payload;
+        if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('CV DB 갱신 실패:', e); }); } catch (e) {} }
+      } else {
+        var base = f.name ? f.name.replace(/\.[^.]+$/, '') : 'CV';
+        var ds = {
+          id: f.id,
+          projectName: (typeof activeProjectId !== 'undefined' && activeProjectId) ? activeProjectId : 'Default Project',
+          experimentType: 'cv',
+          isCv: true,                       // 01-core 초기 자동 활성화에서 제외하기 위한 플래그
+          dataName: base, customName: base, sampleName: '',
+          filename: f.name, uploadedAt: now, lastConvertedAt: now,
+          conversionStatus: 'converted', keyMetric: metric,
+          processedCycles: {}, totalCycles: 0, ice: '-',
+          compareEnabled: false,
+          cvPayload: payload
+        };
+        normalizeDataset(ds);
+        datasetLibrary.push(ds);
+        if (typeof saveDatasetToDB === 'function') { try { Promise.resolve(saveDatasetToDB(ds)).catch(function (e) { console.warn('CV DB 저장 실패:', e); }); } catch (e) {} }
+      }
+      if (typeof renderDatasetLibraryUI === 'function') renderDatasetLibraryUI();
+      if (typeof renderLibraryTable === 'function') renderLibraryTable();
+    } catch (e) { console.warn('CV 라이브러리 등록 실패:', e); }
+  }
+
+  // 라이브러리에서 CV 항목 클릭 시(09번) 호출. 필요하면 저장된 데이터로 복원 후 CV 탭을 연다.
+  function showDataset(id) {
+    var present = null, i;
+    for (i = 0; i < cvFiles.length; i++) { if (cvFiles[i].id === id) { present = cvFiles[i]; break; } }
+    if (!present && typeof datasetLibrary !== 'undefined') {
+      var ds = null;
+      for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { ds = datasetLibrary[i]; break; } }
+      if (ds && ds.cvPayload && ds.cvPayload.cycles && ds.cvPayload.cycles.length) {
+        var color = ds.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];
+        var selNum = (ds.cvPayload.selNum != null) ? ds.cvPayload.selNum : ds.cvPayload.cycles[0].num;
+        cvFiles.push({ id: id, name: ds.filename || ds.dataName, color: color, cycles: ds.cvPayload.cycles, selNum: selNum });
+        refreshFileList();
+        renderAll();
+      }
+    }
+    activateCVTab();
+  }
+
+  // 라이브러리에서 CV 항목 삭제 시(09번) 호출. 그래프에서도 제거.
+  function removeDatasetFromChart(id) {
+    var before = cvFiles.length;
+    cvFiles = cvFiles.filter(function (f) { return f.id !== id; });
+    if (cvFiles.length !== before) { refreshFileList(); renderAll(); }
+  }
+
+  // 외부(09-dataset-library.js)에서 호출할 공개 API
+  window.CVAnalyzer = { activateTab: activateCVTab, showDataset: showDataset, removeDataset: removeDatasetFromChart };
 
   document.addEventListener('DOMContentLoaded', function () {
     var btn = $('btnTabCV'); if (btn) btn.addEventListener('click', activateCVTab);

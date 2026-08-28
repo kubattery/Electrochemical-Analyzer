@@ -398,17 +398,17 @@
     try {
       var now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
       var metric = 'CV · 사이클 ' + f.cycles.length + '개';
-      var payload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
       var existing = null, i;
       for (i = 0; i < datasetLibrary.length; i++) {
         if (datasetLibrary[i].experimentType === 'cv' && datasetLibrary[i].filename === f.name) { existing = datasetLibrary[i]; break; }
       }
       if (existing) {
-        f.id = existing.id;                 // 같은 파일 재업로드: CV 파일 id 를 기존 항목 id 로 맞춤
+        f.id = existing.id;                        // 같은 파일 재업로드: CV 파일 id 를 기존 항목 id 로 맞춤
+        if (existing.lineColor) f.color = existing.lineColor;   // 그래프 색을 라이브러리 색으로 통일
         existing.keyMetric = metric;
         existing.lastConvertedAt = now;
         existing.conversionStatus = 'converted';
-        existing.cvPayload = payload;
+        existing.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
         if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('CV DB 갱신 실패:', e); }); } catch (e) {} }
       } else {
         var base = f.name ? f.name.replace(/\.[^.]+$/, '') : 'CV';
@@ -421,10 +421,11 @@
           filename: f.name, uploadedAt: now, lastConvertedAt: now,
           conversionStatus: 'converted', keyMetric: metric,
           processedCycles: {}, totalCycles: 0, ice: '-',
-          compareEnabled: false,
-          cvPayload: payload
+          compareEnabled: false
         };
-        normalizeDataset(ds);
+        normalizeDataset(ds);                      // ds.lineColor(라이브러리 색) 계산
+        if (ds.lineColor) f.color = ds.lineColor;  // 그래프 색을 라이브러리 색으로 통일
+        ds.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
         datasetLibrary.push(ds);
         if (typeof saveDatasetToDB === 'function') { try { Promise.resolve(saveDatasetToDB(ds)).catch(function (e) { console.warn('CV DB 저장 실패:', e); }); } catch (e) {} }
       }
@@ -441,7 +442,7 @@
       var ds = null;
       for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { ds = datasetLibrary[i]; break; } }
       if (ds && ds.cvPayload && ds.cvPayload.cycles && ds.cvPayload.cycles.length) {
-        var color = ds.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];
+        var color = ds.lineColor || ds.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];  // 라이브러리 색 우선
         var selNum = (ds.cvPayload.selNum != null) ? ds.cvPayload.selNum : ds.cvPayload.cycles[0].num;
         cvFiles.push({ id: id, name: ds.filename || ds.dataName, color: color, cycles: ds.cvPayload.cycles, selNum: selNum });
         refreshFileList();

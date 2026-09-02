@@ -7,7 +7,8 @@
  *          두 차트에 겹쳐 비교한다(파일별 색·범례, 확산 차트는 방전=점선).
  *          종합 모드에서는 지표 카드·펄스별 분석 결과 테이블을 숨기고,
  *          D 파라미터 입력은 비활성화(각 데이터 페이지에서 파일별 입력).
- *          ◀ ▶ 를 누르거나 버튼을 다시 누르면 개별 페이지 모드로 복귀.
+ *          종합 모드에서 ◀ ▶ 는 비활성 — <종합 데이터> 버튼을 다시 누를 때만
+ *          개별 페이지 모드로 복귀한다.
  *
  * [v1.3.0] 데이터 페이지 넘김 + 파일별 D 파라미터:
  *          업로드 존 바로 아래에 페이저(◀ 데이터 n / N · 파일명 ▶)를 표시하고,
@@ -766,11 +767,11 @@
     }
 
     function moveGittPage(dir) {
-        var wasCombined = gittCombined;
-        gittCombined = false; // ◀ ▶ 를 누르면 개별 페이지 모드로 복귀
+        // 종합 모드에서는 ◀ ▶ 비활성 — 개별 창 복귀는 <종합 데이터> 버튼 재클릭으로만
+        if (gittCombined) return;
         var n = visibleGittFiles().length;
-        if (n < 1) { updatePagerUI(); if (wasCombined) renderAll(); return; }
-        if (!wasCombined) gittPage = ((gittPage + dir) % n + n) % n; // 순환 이동 (종합→복귀 시는 현재 페이지 유지)
+        if (n < 1) { updatePagerUI(); return; }
+        gittPage = ((gittPage + dir) % n + n) % n; // 순환 이동
         calcDiffusion(); // 파라미터 힌트(현재 파일의 유효 두께 L) 갱신 포함
         renderAll();
     }
@@ -791,10 +792,14 @@
             label.textContent = '데이터 ' + (gittPage + 1) + '/' + vis.length;
             if (fileEl) fileEl.textContent = shortName(f.name);
         }
-        var dim = !gittCombined && vis.length < 2;
+        // 종합 모드에서는 ◀ ▶ 비활성(흐리게) — 복귀는 종합 데이터 버튼으로만
+        var dim = gittCombined || vis.length < 2;
         ['gittPagePrev', 'gittPageNext'].forEach(function (id) {
             var b = $(id);
-            if (b) b.style.opacity = dim ? '0.35' : '1';
+            if (b) {
+                b.style.opacity = dim ? '0.35' : '1';
+                b.style.cursor = gittCombined ? 'default' : 'pointer';
+            }
         });
         // 종합 버튼 활성 표시
         var cbtn = $('gittCombinedBtn');

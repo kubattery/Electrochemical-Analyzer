@@ -1,5 +1,11 @@
 /* ============================================================================
- * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.0.0)
+ * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.0.1)
+ *
+ * [v1.0.1] τ 측정 보정: 펄스 세그먼트 자체 길이(seg.dur) 대신
+ *          "직전 평형 구간 마지막 점 ~ 펄스 마지막 점"(seg.t1 - prev.t1)으로 측정.
+ *          경계 IR 점프 샘플·방전 말기 다단 IR 계단(30초 미만 조각 제거분)으로 인한
+ *          τ 과소 측정(예: 실제 600s → 598s, 컷오프 펄스 276s → 256s)과
+ *          그에 따른 D 과대 계산을 수정.
  *
  * 역할: GITT 파일(시간/전압)을 GITT 탭에서 업로드 → 전압-시간 곡선에서
  *       펄스·완화 구간을 "자동 감지" → 펄스별 확산계수 D 계산(Weppner–Huggins).
@@ -268,14 +274,21 @@
             var dEt = E_tau - E0, dEs = E_eq - E0;
             if (Math.abs(dEt) < 1e-6) continue;
 
+            // τ = 전류 인가 시간. seg.dur는 경계 IR 점프에 걸린 샘플과
+            // 계단형 IR 조각(30초 미만 제거분)이 빠져 실제보다 짧게 측정된다
+            // (방전 말기 다단 IR 계단에서는 수십 초까지 과소 → D 과대).
+            // 직전 평형 구간 마지막 점(prev.t1) ~ 펄스 마지막 점(seg.t1)으로
+            // 측정하면 IR 계단이 어떻게 쪼개져도 정확한 인가 시간이 된다.
+            var tau = seg.t1 - prev.t1;
+
             pulses.push({
                 mode: dEt > 0 ? 'Charge' : 'Discharge',
                 segIdx: k,
-                tau: seg.dur,
+                tau: tau,
                 tStart: seg.t0,
                 E0: E0, E_tau: E_tau, E_eq: E_eq,
                 dEt: dEt, dEs: dEs,
-                dScaled: (4 / (Math.PI * seg.dur)) * Math.pow(dEs / dEt, 2)
+                dScaled: (4 / (Math.PI * tau)) * Math.pow(dEs / dEt, 2)
             });
         }
 

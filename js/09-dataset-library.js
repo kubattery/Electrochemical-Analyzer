@@ -240,9 +240,12 @@ function switchActiveDataset(id) {
     if (!ds) return;
 
     // GITT 데이터셋은 독립 분석(21-gitt.js 전용)이라 일반 분석으로 전환하지 않는다.
-    // 클릭 시 GITT 탭만 열어주고, 활성 데이터셋(일반 분석 상태)은 그대로 유지.
+    // 클릭 시 저장된 분석 결과(gittPayload)가 있으면 복원한 뒤 GITT 탭을 열고,
+    // 활성 데이터셋(일반 분석 상태)은 그대로 유지.
     if (ds.experimentType === 'gitt') {
-        if (window.GittAnalyzer && typeof GittAnalyzer.activateTab === 'function') {
+        if (window.GittAnalyzer && typeof GittAnalyzer.showDataset === 'function') {
+            GittAnalyzer.showDataset(ds.id);
+        } else if (window.GittAnalyzer && typeof GittAnalyzer.activateTab === 'function') {
             GittAnalyzer.activateTab();
         }
         return;

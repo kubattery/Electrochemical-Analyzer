@@ -193,6 +193,13 @@ function renderLibraryTable() {
             await updateDatasetInDB(ds);
             renderDatasetLibraryUI();
             renderLibraryTable();
+            // GITT 데이터셋: 체크박스가 GITT 탭 그래프 표시/숨김을 제어 (21-gitt.js)
+            if (ds.experimentType === 'gitt') {
+                if (window.GittAnalyzer && typeof GittAnalyzer.setCompare === 'function') {
+                    GittAnalyzer.setCompare(ds.id, cb.checked);
+                }
+                return; // 일반 분석(runAnalysis) 대상 아님
+            }
             if (hasActiveDataset()) runAnalysis();
         });
         tdCheck.appendChild(cb);
@@ -408,4 +415,3 @@ window.addEventListener('click', () => {
         menu.remove();
     });
 });
-

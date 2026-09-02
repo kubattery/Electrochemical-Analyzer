@@ -378,10 +378,14 @@ async function removeDataset(id) {
 }
 
 /**
- * 비교 오버레이용 체크된 목록 반환
+ * 비교 오버레이용 체크된 목록 반환 (일반 분석: rate/cycle 전용)
+ * GITT·CV는 독립 분석 탭 전용이라 여기서 항상 제외한다 — 이들의 체크박스는
+ * 자기 탭(21-gitt/17-cv)의 표시 여부만 제어하며, Rate Capability 차트·
+ * 율속 요약 테이블 등 일반 분석 화면에는 절대 나타나지 않아야 한다.
  */
 function getCheckedDatasets() {
-    return datasetLibrary.filter(d => d.compareEnabled);
+    return datasetLibrary.filter(d =>
+        d.compareEnabled && d.experimentType !== 'gitt' && d.experimentType !== 'cv');
 }
 
 /**

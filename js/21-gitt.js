@@ -826,16 +826,33 @@
     // 파일별 D 파라미터 입력 동기화·저장
     // ==================================================================
     // 현재 페이지 파일의 파라미터를 입력칸에 반영 (입력 중인 칸은 건드리지 않음).
-    // 종합 모드에서는 어느 파일의 값인지 모호하므로 입력을 비활성화한다.
+    // 종합 모드에서는 파일마다 값이 달라 입력칸 대신 안내 메시지를 표시한다.
     function syncParamInputs() {
         var f = displayedGittFile();
+        var loadingEl = $('gittLoading');
+        var box = loadingEl && loadingEl.parentElement ? loadingEl.parentElement.parentElement : null;
+        if (box) {
+            // 안내 메시지 요소를 입력칸 컨테이너에 한 번만 생성
+            var msg = $('gittParamMsg');
+            if (!msg) {
+                msg = document.createElement('div');
+                msg.id = 'gittParamMsg';
+                msg.style.cssText = 'display:none; font-size:11px; color:var(--text-muted); align-self:center; padding:4px 2px;';
+                msg.textContent = 'Loading, V_M, M_B 값들은 개별 데이터 창에서 입력 및 수정해주세요';
+                box.appendChild(msg);
+            }
+            msg.style.display = gittCombined ? '' : 'none';
+            // 종합 모드: 입력칸 3개(라벨 포함) 숨김, 개별 모드: 복원
+            for (var i = 0; i < box.children.length; i++) {
+                var ch = box.children[i];
+                if (ch.id === 'gittParamMsg') continue;
+                ch.style.display = gittCombined ? 'none' : '';
+            }
+        }
+        if (gittCombined) return;
         [['gittLoading', 'Ld'], ['gittVol', 'Vm'], ['gittMolarMass', 'Mb']].forEach(function (pair) {
             var el = $(pair[0]);
-            if (!el) return;
-            el.disabled = gittCombined;
-            el.style.opacity = gittCombined ? '0.4' : '1';
-            if (document.activeElement === el) return;
-            if (gittCombined) { el.value = ''; return; }
+            if (!el || document.activeElement === el) return;
             el.value = (f && f.params && f.params[pair[1]] > 0) ? f.params[pair[1]] : '';
         });
     }

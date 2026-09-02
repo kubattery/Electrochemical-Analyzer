@@ -348,6 +348,11 @@ async function removeDataset(id) {
         CVAnalyzer.removeDataset(id);
     }
 
+    // GITT 데이터셋이면 GITT 탭 그래프에서도 제거하여 동기화
+    if (removedDs && removedDs.experimentType === 'gitt' && window.GittAnalyzer && typeof GittAnalyzer.removeDataset === 'function') {
+        GittAnalyzer.removeDataset(id);
+    }
+
     if (activeDatasetId === id) {
         // GITT·CV 데이터셋은 활성 전환 대상이 아니므로 일반 분석 데이터셋 중에서 대체를 찾는다
         const fallbackDs = [...datasetLibrary].reverse().find(d => d.experimentType !== 'gitt' && d.experimentType !== 'cv');
@@ -565,6 +570,13 @@ function renderDatasetLibraryUI() {
                 await updateDatasetInDB(ds);
                 renderDatasetLibraryUI();
                 renderLibraryTable();
+                // GITT 데이터셋: 체크박스가 GITT 탭 그래프 표시/숨김을 제어 (21-gitt.js)
+                if (ds.experimentType === 'gitt') {
+                    if (window.GittAnalyzer && typeof GittAnalyzer.setCompare === 'function') {
+                        GittAnalyzer.setCompare(ds.id, cb.checked);
+                    }
+                    return; // 일반 분석(runAnalysis) 대상 아님
+                }
                 if (hasActiveDataset()) runAnalysis();
             });
             

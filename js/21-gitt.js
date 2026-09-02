@@ -1,5 +1,10 @@
 /* ============================================================================
- * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.0.1)
+ * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.1.0)
+ *
+ * [v1.1.0] 분석 결과 영속화: 분석 성공 시 전압 프로파일(formation 제외 구간)과
+ *          펄스 결과를 gittPayload로 IndexedDB 데이터셋 레코드에 저장(CV 탭의
+ *          cvPayload와 동일한 패턴). 새로고침 후 GITT 탭 진입 또는 라이브러리
+ *          항목 클릭 시 파일 재업로드 없이 그래프·테이블이 즉시 복원된다.
  *
  * [v1.0.1] τ 측정 보정: 펄스 세그먼트 자체 길이(seg.dur) 대신
  *          "직전 평형 구간 마지막 점 ~ 펄스 마지막 점"(seg.t1 - prev.t1)으로 측정.
@@ -30,6 +35,7 @@
     var gittSegments = [];      // 감지된 구간 목록
     var gittPulses = [];        // 유효 펄스 결과
     var gittTrimT = null;       // formation 제외: 이 시각(초) 이전 데이터는 표시하지 않음
+    var gittOrigT0 = null;      // 원본 데이터 시작 시각(초) — 복원 시 formation 제외량 표시용
     var gittViewMin = null;     // 프로파일 x축 구간 보기 시작 (h, formation 제외 후 기준)
     var gittViewMax = null;     // 프로파일 x축 구간 보기 끝 (h)
     var gittFilename = '';
@@ -49,6 +55,8 @@
         var btn = $('btnTabGitt'), panel = $('tab-gitt');
         if (btn) btn.classList.add('active');
         if (panel) panel.classList.add('active');
+        // 새로고침 후 첫 진입이면 저장된 분석 결과를 자동 복원
+        try { autoRestoreLatestGitt(); } catch (e) { console.warn('GITT 자동 복원 실패:', e); }
         setTimeout(function () {
             if (chartProfile) chartProfile.resize();
             if (chartDiffusion) chartDiffusion.resize();
@@ -151,6 +159,7 @@
         pts.sort(function (a, b) { return a.t - b.t; });
 
         gittPoints = pts;
+        gittOrigT0 = pts[0].t;
         gittFilename = filename;
         setStatus('구간 감지 중... (' + pts.length.toLocaleString() + ' 포인트)');
 
@@ -326,6 +335,100 @@
     }
 
     // ==================================================================
+    // 분석 결과 영속화 (gittPayload)
+    //   - IndexedDB 구조적 복제는 TypedArray를 그대로 저장하므로
+    //     시간=Float64Array, 전압=Float32Array로 압축 저장 (CSV 재파싱 불필요).
+    //   - formation 제외(trim) 이후 구간만 저장 — 표시·분석에 쓰이는 구간.
+    //   - D/logD는 저장하지 않음: 복원 후 calcDiffusion()이 입력값으로 재계산.
+    // ==================================================================
+    function buildGittPayload() {
+        var trimT = (gittTrimT != null) ? gittTrimT : (gittPoints.length ? gittPoints[0].t : 0);
+        var startIdx = 0;
+        while (startIdx < gittPoints.length && gittPoints[startIdx].t < trimT) startIdx++;
+        var n = gittPoints.length - startIdx;
+        var t = new Float64Array(n), v = new Float32Array(n);
+        for (var i = 0; i < n; i++) {
+            t[i] = gittPoints[startIdx + i].t;
+            v[i] = gittPoints[startIdx + i].v;
+        }
+        var pulses = gittPulses.map(function (p) {
+            return {
+                mode: p.mode, run: p.run, pulseNo: p.pulseNo,
+                tau: p.tau, tStart: p.tStart,
+                E0: p.E0, E_tau: p.E_tau, E_eq: p.E_eq,
+                dEt: p.dEt, dEs: p.dEs, dScaled: p.dScaled
+            };
+        });
+        return {
+            version: 1,
+            t: t, v: v,
+            origT0: (gittOrigT0 != null) ? gittOrigT0 : (gittPoints.length ? gittPoints[0].t : null),
+            trimT: gittTrimT,
+            pulses: pulses,
+            pulseMode: gittPulses.pulseMode || null,
+            restMode: gittPulses.restMode || null
+        };
+    }
+
+    function restoreFromPayload(pl, filename) {
+        var n = pl.t.length;
+        var pts = new Array(n);
+        for (var i = 0; i < n; i++) pts[i] = { t: pl.t[i], v: pl.v[i] };
+        gittPoints = pts;
+        gittFilename = filename || '';
+        gittSegments = [];
+        gittTrimT = (pl.trimT != null) ? pl.trimT : null;
+        gittOrigT0 = (pl.origT0 != null) ? pl.origT0 : (n ? pts[0].t : null);
+        var pulses = (pl.pulses || []).map(function (p) {
+            return {
+                mode: p.mode, run: p.run, pulseNo: p.pulseNo,
+                tau: p.tau, tStart: p.tStart,
+                E0: p.E0, E_tau: p.E_tau, E_eq: p.E_eq,
+                dEt: p.dEt, dEs: p.dEs, dScaled: p.dScaled
+            };
+        });
+        gittPulses = pulses;
+        gittPulses.pulseMode = pl.pulseMode || null;
+        gittPulses.restMode = pl.restMode || null;
+        calcDiffusion();
+        renderAll();
+        var nCh = pulses.filter(function (p) { return p.mode === 'Charge'; }).length;
+        setStatus('저장된 분석 복원: 펄스 ' + pulses.length + '개 (충전 ' + nCh + ' · 방전 ' +
+            (pulses.length - nCh) + ') · 파일: ' + gittFilename + ' — 재분석하려면 파일을 다시 업로드하세요.');
+    }
+
+    // 새로고침 후 GITT 탭 첫 진입 시: 화면에 데이터가 없으면 가장 최근
+    // GITT 데이터셋의 저장 결과를 자동 복원한다.
+    function autoRestoreLatestGitt() {
+        if (gittPoints.length) return;
+        if (typeof datasetLibrary === 'undefined') return;
+        for (var i = datasetLibrary.length - 1; i >= 0; i--) {
+            var ds = datasetLibrary[i];
+            if (ds && ds.experimentType === 'gitt' && ds.gittPayload && ds.gittPayload.t && ds.gittPayload.t.length) {
+                restoreFromPayload(ds.gittPayload, ds.filename);
+                return;
+            }
+        }
+    }
+
+    // 라이브러리에서 GITT 항목 클릭 시(09번 가드) 호출: 해당 데이터셋이
+    // 화면에 없으면 저장된 결과로 복원한 뒤 탭을 연다.
+    // (복원을 먼저 해야 activateGittTab의 자동 복원과 중복 실행되지 않는다)
+    function showGittDataset(id) {
+        var ds = null;
+        if (typeof datasetLibrary !== 'undefined') {
+            for (var i = 0; i < datasetLibrary.length; i++) {
+                if (datasetLibrary[i].id === id) { ds = datasetLibrary[i]; break; }
+            }
+        }
+        if (ds && !(gittPoints.length && gittFilename === ds.filename) &&
+            ds.gittPayload && ds.gittPayload.t && ds.gittPayload.t.length) {
+            restoreFromPayload(ds.gittPayload, ds.filename);
+        }
+        activateGittTab();
+    }
+
+    // ==================================================================
     // 데이터 라이브러리 등록: 분석에 성공한 GITT 파일을 "GITT" 배지로 표시.
     //   - rate/cycle 전환 대상이 아님(독립 분석) — 표시·관리(이름/삭제)용.
     //   - 클릭 시 일반 분석으로 전환되지 않고 GITT 탭만 열린다 (09번 가드).
@@ -336,6 +439,7 @@
         try {
             var metric = '펄스 ' + nPulse + '개 (충 ' + nCh + ' · 방 ' + nDis + ')';
             var now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            var payload = buildGittPayload(); // 새로고침 후 복원용 분석 결과 (IndexedDB 저장)
             var existing = null;
             for (var i = 0; i < datasetLibrary.length; i++) {
                 if (datasetLibrary[i].experimentType === 'gitt' && datasetLibrary[i].filename === gittFilename) {
@@ -348,6 +452,7 @@
                 existing.keyMetric = metric;
                 existing.lastConvertedAt = now;
                 existing.conversionStatus = 'converted';
+                existing.gittPayload = payload;
                 if (typeof updateDatasetInDB === 'function') {
                     Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('GITT DB 갱신 실패:', e); });
                 }
@@ -369,7 +474,8 @@
                     processedCycles: {},        // 일반 분석 사이클 없음 (독립 분석)
                     totalCycles: 0,
                     ice: '-',
-                    compareEnabled: false       // 비교 오버레이 대상 아님
+                    compareEnabled: false,      // 비교 오버레이 대상 아님
+                    gittPayload: payload        // 새로고침 후 복원용 분석 결과
                 };
                 normalizeDataset(ds);
                 datasetLibrary.push(ds);
@@ -449,7 +555,8 @@
         var nShow = 0;
         for (var i = gittPoints.length - 1; i >= 0 && gittPoints[i].t >= trimT; i--) nShow++;
         var totalH = (gittPoints[gittPoints.length - 1].t - trimT) / 3600;
-        var trimmedH = (trimT - gittPoints[0].t) / 3600;
+        var origT0 = (gittOrigT0 != null) ? gittOrigT0 : gittPoints[0].t;
+        var trimmedH = (trimT - origT0) / 3600;
         var nCh = gittPulses.filter(function (p) { return p.mode === 'Charge'; }).length;
         var html =
             metricBox('데이터 포인트', nShow.toLocaleString(), '') +
@@ -741,6 +848,7 @@
         ingestRows: ingestGittRows,
         getPulses: function () { return gittPulses; },
         getSegments: function () { return gittSegments; },
-        activateTab: activateGittTab
+        activateTab: activateGittTab,
+        showDataset: showGittDataset
     };
 })();

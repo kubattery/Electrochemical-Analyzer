@@ -696,14 +696,20 @@
         var uploadCard = drop.parentNode; // 업로드 + 표시모드 카드
         var bar = document.createElement('div');
         bar.id = 'gittPager';
-        bar.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:10px;' +
-            ' background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:6px 10px;';
+        bar.style.cssText = 'display:flex; align-items:center; gap:10px;' +
+            ' background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:6px 12px;';
         var btnStyle = 'background:rgba(255,255,255,0.06); border:1px solid var(--border-color);' +
             ' border-radius:6px; color:#fff; cursor:pointer; padding:2px 14px; font-size:13px; line-height:20px;';
+        // 왼쪽 여백(flex:1) + 가운데 "◀ 데이터 n/N ▶" + 오른쪽 파일명(flex:1)
         bar.innerHTML =
-            '<button id="gittPagePrev" type="button" title="이전 데이터" style="' + btnStyle + '">&#9664;</button>' +
-            '<span id="gittPageLabel" style="font-size:12px; color:var(--text-muted); min-width:220px; text-align:center;"></span>' +
-            '<button id="gittPageNext" type="button" title="다음 데이터" style="' + btnStyle + '">&#9654;</button>';
+            '<div style="flex:1;"></div>' +
+            '<div style="display:flex; align-items:center; gap:10px;">' +
+                '<button id="gittPagePrev" type="button" title="이전 데이터" style="' + btnStyle + '">&#9664;</button>' +
+                '<span id="gittPageLabel" style="font-size:12px; color:#fff; font-weight:600; min-width:80px; text-align:center;"></span>' +
+                '<button id="gittPageNext" type="button" title="다음 데이터" style="' + btnStyle + '">&#9654;</button>' +
+            '</div>' +
+            '<div id="gittPageFile" style="flex:1; text-align:right; font-size:11px; color:var(--text-muted);' +
+                ' overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>';
         uploadCard.parentNode.insertBefore(bar, uploadCard.nextSibling);
         $('gittPagePrev').addEventListener('click', function () { moveGittPage(-1); });
         $('gittPageNext').addEventListener('click', function () { moveGittPage(1); });
@@ -723,10 +729,13 @@
         if (!label) return;
         var f = displayedGittFile();       // 페이지 인덱스 보정 포함
         var vis = visibleGittFiles();
+        var fileEl = $('gittPageFile');
         if (!vis.length) {
-            label.textContent = '데이터 0 / 0 — 표시할 GITT 파일이 없습니다';
+            label.textContent = '데이터 0/0';
+            if (fileEl) fileEl.textContent = '표시할 GITT 파일이 없습니다';
         } else {
-            label.textContent = '데이터 ' + (gittPage + 1) + ' / ' + vis.length + ' · ' + shortName(f.name);
+            label.textContent = '데이터 ' + (gittPage + 1) + '/' + vis.length;
+            if (fileEl) fileEl.textContent = shortName(f.name);
         }
         var dim = vis.length < 2;
         ['gittPagePrev', 'gittPageNext'].forEach(function (id) {

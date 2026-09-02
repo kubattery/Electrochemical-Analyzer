@@ -703,6 +703,19 @@
     function shortName(n) { return String(n || '').replace(/\.[^.]+$/, ''); }
     function safeName(n) { return (typeof escapeHtml === 'function') ? escapeHtml(n) : String(n); }
 
+    // 색 밝기 조절: t > 0 → 흰색 쪽(옅게), t < 0 → 검은색 쪽(짙게). t는 -1~1.
+    function shadeColor(hex, t) {
+        var h = String(hex || '').replace('#', '');
+        if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+        if (h.length !== 6) return hex;
+        var target = t > 0 ? 255 : 0, a = Math.abs(t);
+        var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+        r = Math.round(r + (target - r) * a);
+        g = Math.round(g + (target - g) * a);
+        b = Math.round(b + (target - b) * a);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
     // ==================================================================
     // 데이터 페이저: 업로드 존 바로 아래에 "◀ 데이터 n / N · 파일명 ▶" 표시.
     // 체크된 GITT 파일들을 한 페이지에 하나씩 순환하며 본다.
@@ -831,6 +844,8 @@
         var f = displayedGittFile();
         var loadingEl = $('gittLoading');
         var box = loadingEl && loadingEl.parentElement ? loadingEl.parentElement.parentElement : null;
+        var sel = $('gittShowMode');
+        var selWrap = sel ? sel.parentElement : null;
         if (box) {
             // 안내 메시지 요소를 입력칸 컨테이너에 한 번만 생성
             var msg = $('gittParamMsg');
@@ -842,10 +857,19 @@
                 box.appendChild(msg);
             }
             msg.style.display = gittCombined ? '' : 'none';
+            // 표시 모드 박스: 종합 모드에서는 확산계수 카드 쪽으로 이동, 개별 모드에서는 원위치
+            if (selWrap) {
+                if (gittCombined) {
+                    if (!selWrap._gittHome) selWrap._gittHome = { parent: selWrap.parentElement, next: selWrap.nextSibling };
+                    if (selWrap.parentElement !== box) box.appendChild(selWrap);
+                } else if (selWrap._gittHome && selWrap.parentElement !== selWrap._gittHome.parent) {
+                    selWrap._gittHome.parent.insertBefore(selWrap, selWrap._gittHome.next);
+                }
+            }
             // 종합 모드: 입력칸 3개(라벨 포함) 숨김, 개별 모드: 복원
             for (var i = 0; i < box.children.length; i++) {
                 var ch = box.children[i];
-                if (ch.id === 'gittParamMsg') continue;
+                if (ch.id === 'gittParamMsg' || ch === selWrap) continue;
                 ch.style.display = gittCombined ? 'none' : '';
             }
         }
@@ -1038,13 +1062,16 @@
                     .map(function (p) { return { x: p.E_eq, y: p.logD }; })
                     .sort(function (a, b) { return a.x - b.x; });
                 if (!pts.length) return;
-                var color = gittCombined ? f.color : mc[1];
+                // 종합 모드: 같은 파일 색을 밝기만 달리해 구분 —
+                // 충전 = 적당히 짙게, 방전 = 적당히 옅게 (과한 대비는 피함)
+                var color = gittCombined
+                    ? (mode === 'Charge' ? shadeColor(f.color, -0.18) : shadeColor(f.color, 0.38))
+                    : mc[1];
                 datasets.push({
                     label: gittCombined ? (shortName(f.name) + ' · ' + mode) : mode,
                     data: pts,
                     borderColor: color,
-                    backgroundColor: (gittCombined && mode === 'Discharge') ? 'transparent' : color,
-                    borderDash: (gittCombined && mode === 'Discharge') ? [4, 3] : undefined,
+                    backgroundColor: color,
                     borderWidth: 1.5,
                     pointRadius: 3.5,
                     pointHoverRadius: 6,

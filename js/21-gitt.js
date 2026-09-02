@@ -1,5 +1,13 @@
 /* ============================================================================
- * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.3.0)
+ * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.4.0)
+ *
+ * [v1.4.0] 종합 데이터 모드:
+ *          페이저 왼쪽의 <종합 데이터> 버튼으로 진입. 체크박스 목록(데이터1,
+ *          데이터2, …)에서 원하는 데이터만 골라 전압 프로파일·이온 확산계수
+ *          두 차트에 겹쳐 비교한다(파일별 색·범례, 확산 차트는 방전=점선).
+ *          종합 모드에서는 지표 카드·펄스별 분석 결과 테이블을 숨기고,
+ *          D 파라미터 입력은 비활성화(각 데이터 페이지에서 파일별 입력).
+ *          ◀ ▶ 를 누르거나 버튼을 다시 누르면 개별 페이지 모드로 복귀.
  *
  * [v1.3.0] 데이터 페이지 넘김 + 파일별 D 파라미터:
  *          업로드 존 바로 아래에 페이저(◀ 데이터 n / N · 파일명 ▶)를 표시하고,
@@ -57,7 +65,9 @@
     //   visible = 사이드바 라이브러리 체크박스(compareEnabled)와 동기화.
     //   params  = 파일별 D 계산 파라미터 { Ld, Vm, Mb } (없으면 null).
     var gittFiles = [];
-    var gittPage = 0;   // 현재 페이지 인덱스 (체크된 파일 목록 기준)
+    var gittPage = 0;          // 현재 페이지 인덱스 (체크된 파일 목록 기준)
+    var gittCombined = false;  // 종합 데이터 모드 여부
+    var gittCombinedSel = {};  // 종합 모드 선택 상태 (id → false만 기록, 기본 선택)
 
     function findGittFile(id) {
         for (var i = 0; i < gittFiles.length; i++) if (gittFiles[i].id === id) return gittFiles[i];
@@ -78,6 +88,10 @@
     function jumpToFile(id) {
         var vis = visibleGittFiles();
         for (var i = 0; i < vis.length; i++) if (vis[i].id === id) { gittPage = i; return; }
+    }
+    // 종합 모드에서 겹쳐 그릴 파일들 (체크된 파일 중 종합 목록에서 선택된 것)
+    function combinedFiles() {
+        return visibleGittFiles().filter(function (f) { return gittCombinedSel[f.id] !== false; });
     }
     function libraryColorOf(id, fallback) {
         if (typeof datasetLibrary !== 'undefined') {
@@ -402,6 +416,7 @@
         entry.pulseMode = gittPulses.pulseMode || null;
         entry.restMode = gittPulses.restMode || null;
         entry.visible = true;
+        gittCombined = false; // 새로 분석한 파일은 개별 페이지로 보여준다
         jumpToFile(id); // 방금 분석한 파일의 페이지로 이동
         return entry;
     }
@@ -524,7 +539,7 @@
                     if (typeof renderDatasetLibraryUI === 'function') renderDatasetLibraryUI();
                 }
             }
-            if (entry) { jumpToFile(id); calcDiffusion(); renderAll(); }
+            if (entry) { gittCombined = false; jumpToFile(id); calcDiffusion(); renderAll(); }
         }
         activateGittTab();
     }
@@ -655,6 +670,10 @@
         });
         var hint = $('gittParamHint');
         if (hint) {
+            if (gittCombined) {
+                hint.textContent = '종합 데이터 모드 — Loading · V_M · M_B 는 각 데이터 페이지에서 파일별로 입력·저장됩니다.';
+                return;
+            }
             var f2 = displayedGittFile();
             if (f2 && validParams(f2.params)) {
                 var L = ((f2.params.Ld / 1000.0) * f2.params.Vm) / f2.params.Mb;
@@ -700,9 +719,12 @@
             ' background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:6px 12px;';
         var btnStyle = 'background:rgba(255,255,255,0.06); border:1px solid var(--border-color);' +
             ' border-radius:6px; color:#fff; cursor:pointer; padding:2px 14px; font-size:13px; line-height:20px;';
-        // 왼쪽 여백(flex:1) + 가운데 "◀ 데이터 n/N ▶" + 오른쪽 파일명(flex:1)
+        // 왼쪽 <종합 데이터> 버튼 + 가운데 "◀ 데이터 n/N ▶" + 오른쪽 파일명(flex:1)
         bar.innerHTML =
-            '<div style="flex:1;"></div>' +
+            '<div style="flex:1; display:flex; align-items:center;">' +
+                '<button id="gittCombinedBtn" type="button" title="선택한 데이터들을 한 그래프에 겹쳐 비교"' +
+                ' style="' + btnStyle + ' padding:2px 10px; font-size:11px;">종합 데이터</button>' +
+            '</div>' +
             '<div style="display:flex; align-items:center; gap:10px;">' +
                 '<button id="gittPagePrev" type="button" title="이전 데이터" style="' + btnStyle + '">&#9664;</button>' +
                 '<span id="gittPageLabel" style="font-size:12px; color:#fff; font-weight:600; min-width:80px; text-align:center;"></span>' +
@@ -711,15 +733,31 @@
             '<div id="gittPageFile" style="flex:1; text-align:right; font-size:11px; color:var(--text-muted);' +
                 ' overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>';
         uploadCard.parentNode.insertBefore(bar, uploadCard.nextSibling);
+
+        // 종합 모드 데이터 선택 패널 (페이저 바로 아래, 종합 모드일 때만 표시)
+        var panel = document.createElement('div');
+        panel.id = 'gittCombinedPanel';
+        panel.style.cssText = 'display:none; align-items:center; gap:14px; flex-wrap:wrap;' +
+            ' background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;' +
+            ' padding:8px 12px; font-size:12px; color:var(--text-muted);';
+        bar.parentNode.insertBefore(panel, bar.nextSibling);
+
         $('gittPagePrev').addEventListener('click', function () { moveGittPage(-1); });
         $('gittPageNext').addEventListener('click', function () { moveGittPage(1); });
+        $('gittCombinedBtn').addEventListener('click', function () {
+            gittCombined = !gittCombined;
+            calcDiffusion();
+            renderAll();
+        });
         updatePagerUI();
     }
 
     function moveGittPage(dir) {
+        var wasCombined = gittCombined;
+        gittCombined = false; // ◀ ▶ 를 누르면 개별 페이지 모드로 복귀
         var n = visibleGittFiles().length;
-        if (n < 1) { updatePagerUI(); return; }
-        gittPage = ((gittPage + dir) % n + n) % n; // 순환 이동
+        if (n < 1) { updatePagerUI(); if (wasCombined) renderAll(); return; }
+        if (!wasCombined) gittPage = ((gittPage + dir) % n + n) % n; // 순환 이동 (종합→복귀 시는 현재 페이지 유지)
         calcDiffusion(); // 파라미터 힌트(현재 파일의 유효 두께 L) 갱신 포함
         renderAll();
     }
@@ -730,29 +768,74 @@
         var f = displayedGittFile();       // 페이지 인덱스 보정 포함
         var vis = visibleGittFiles();
         var fileEl = $('gittPageFile');
-        if (!vis.length) {
+        if (gittCombined) {
+            label.textContent = '종합 데이터';
+            if (fileEl) fileEl.textContent = combinedFiles().length + '개 데이터 겹쳐 보기';
+        } else if (!vis.length) {
             label.textContent = '데이터 0/0';
             if (fileEl) fileEl.textContent = '표시할 GITT 파일이 없습니다';
         } else {
             label.textContent = '데이터 ' + (gittPage + 1) + '/' + vis.length;
             if (fileEl) fileEl.textContent = shortName(f.name);
         }
-        var dim = vis.length < 2;
+        var dim = !gittCombined && vis.length < 2;
         ['gittPagePrev', 'gittPageNext'].forEach(function (id) {
             var b = $(id);
             if (b) b.style.opacity = dim ? '0.35' : '1';
         });
+        // 종합 버튼 활성 표시
+        var cbtn = $('gittCombinedBtn');
+        if (cbtn) {
+            cbtn.style.background = gittCombined ? 'var(--color-primary, #3b82f6)' : 'rgba(255,255,255,0.06)';
+            cbtn.style.borderColor = gittCombined ? 'transparent' : 'var(--border-color)';
+        }
+        updateCombinedPanel();
+    }
+
+    // 종합 모드 데이터 선택 목록: 데이터1, 데이터2, … 체크박스
+    function updateCombinedPanel() {
+        var panel = $('gittCombinedPanel');
+        if (!panel) return;
+        if (!gittCombined) { panel.style.display = 'none'; return; }
+        panel.style.display = 'flex';
+        var vis = visibleGittFiles();
+        if (!vis.length) {
+            panel.innerHTML = '<span>겹쳐 볼 GITT 파일이 없습니다 — 파일을 업로드하거나 사이드바에서 체크하세요.</span>';
+            return;
+        }
+        var html = '<span style="font-weight:600; color:#fff;">비교할 데이터:</span>';
+        vis.forEach(function (f, i) {
+            var on = gittCombinedSel[f.id] !== false;
+            html += '<label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap;">' +
+                '<input type="checkbox" data-gitt-id="' + f.id + '"' + (on ? ' checked' : '') + ' style="cursor:pointer;">' +
+                '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + f.color + ';"></span>' +
+                '데이터' + (i + 1) + ' · ' + shortName(f.name) +
+                '</label>';
+        });
+        panel.innerHTML = html;
+        var boxes = panel.querySelectorAll('input[type="checkbox"]');
+        for (var k = 0; k < boxes.length; k++) {
+            boxes[k].addEventListener('change', function () {
+                gittCombinedSel[this.getAttribute('data-gitt-id')] = this.checked;
+                renderAll();
+            });
+        }
     }
 
     // ==================================================================
     // 파일별 D 파라미터 입력 동기화·저장
     // ==================================================================
-    // 현재 페이지 파일의 파라미터를 입력칸에 반영 (입력 중인 칸은 건드리지 않음)
+    // 현재 페이지 파일의 파라미터를 입력칸에 반영 (입력 중인 칸은 건드리지 않음).
+    // 종합 모드에서는 어느 파일의 값인지 모호하므로 입력을 비활성화한다.
     function syncParamInputs() {
         var f = displayedGittFile();
         [['gittLoading', 'Ld'], ['gittVol', 'Vm'], ['gittMolarMass', 'Mb']].forEach(function (pair) {
             var el = $(pair[0]);
-            if (!el || document.activeElement === el) return;
+            if (!el) return;
+            el.disabled = gittCombined;
+            el.style.opacity = gittCombined ? '0.4' : '1';
+            if (document.activeElement === el) return;
+            if (gittCombined) { el.value = ''; return; }
             el.value = (f && f.params && f.params[pair[1]] > 0) ? f.params[pair[1]] : '';
         });
     }
@@ -791,6 +874,7 @@
     function renderDetectCard() {
         var card = $('gittDetectCard');
         if (!card) return;
+        if (gittCombined) { card.style.display = 'none'; return; } // 종합 모드: 지표 카드 숨김
         var f = displayedGittFile();
         if (!f) { card.style.display = 'none'; return; }
         card.style.display = 'flex';
@@ -860,23 +944,23 @@
         if (!canvas) return;
         if (chartProfile) { chartProfile.destroy(); chartProfile = null; }
 
-        // 현재 페이지 파일만 표시. 파일이 없으면 빈 축 프레임을 그린다.
-        var f = displayedGittFile();
+        // 개별 모드: 현재 페이지 파일 1개. 종합 모드: 선택한 파일들을 겹쳐 표시.
+        // 파일이 없으면 빈 축 프레임을 그린다.
+        var showFiles = gittCombined ? combinedFiles() : (displayedGittFile() ? [displayedGittFile()] : []);
         var datasets = [];
-        if (f) {
+        showFiles.forEach(function (f) {
             var data = buildProfileData(f);
-            if (data) {
-                datasets.push({
-                    label: shortName(f.name),
-                    data: data,
-                    borderColor: '#60a5fa',
-                    backgroundColor: 'transparent',
-                    borderWidth: 1.2,
-                    pointRadius: 0,
-                    tension: 0
-                });
-            }
-        }
+            if (!data) return;
+            datasets.push({
+                label: shortName(f.name),
+                data: data,
+                borderColor: gittCombined ? f.color : '#60a5fa',
+                backgroundColor: 'transparent',
+                borderWidth: 1.2,
+                pointRadius: 0,
+                tension: 0
+            });
+        });
 
         chartProfile = new Chart(canvas.getContext('2d'), {
             type: 'line',
@@ -887,7 +971,7 @@
                 animation: false,
                 parsing: false,
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: gittCombined && datasets.length > 0, labels: { color: '#fff', boxWidth: 14, padding: 10 } },
                     tooltip: {
                         callbacks: {
                             label: function (ctx) { return ctx.parsed.y.toFixed(4) + ' V @ ' + ctx.parsed.x.toFixed(2) + ' h'; }
@@ -925,10 +1009,11 @@
         if (!canvas) return;
         if (chartDiffusion) { chartDiffusion.destroy(); chartDiffusion = null; }
 
-        // 현재 페이지 파일만 표시 (모드별 색). 파일이 없으면 빈 축 프레임.
-        var f = displayedGittFile();
+        // 개별 모드: 현재 페이지 파일 (모드별 색). 종합 모드: 선택한 파일들을
+        // 파일 색으로 겹쳐 표시(방전 = 빈 점 + 점선). 파일이 없으면 빈 축 프레임.
+        var showFiles = gittCombined ? combinedFiles() : (displayedGittFile() ? [displayedGittFile()] : []);
         var datasets = [];
-        if (f) {
+        showFiles.forEach(function (f) {
             var pulses = filterByMode(f.pulses).filter(function (p) { return p.logD != null; });
             [['Discharge', '#06b6d4'], ['Charge', '#ec4899']].forEach(function (mc) {
                 var mode = mc[0];
@@ -936,11 +1021,13 @@
                     .map(function (p) { return { x: p.E_eq, y: p.logD }; })
                     .sort(function (a, b) { return a.x - b.x; });
                 if (!pts.length) return;
+                var color = gittCombined ? f.color : mc[1];
                 datasets.push({
-                    label: mode,
+                    label: gittCombined ? (shortName(f.name) + ' · ' + mode) : mode,
                     data: pts,
-                    borderColor: mc[1],
-                    backgroundColor: mc[1],
+                    borderColor: color,
+                    backgroundColor: (gittCombined && mode === 'Discharge') ? 'transparent' : color,
+                    borderDash: (gittCombined && mode === 'Discharge') ? [4, 3] : undefined,
                     borderWidth: 1.5,
                     pointRadius: 3.5,
                     pointHoverRadius: 6,
@@ -949,7 +1036,7 @@
                     tension: 0
                 });
             });
-        }
+        });
 
         chartDiffusion = new Chart(canvas.getContext('2d'), {
             type: 'scatter',
@@ -989,6 +1076,11 @@
     function renderSummaryTable() {
         var tbody = document.querySelector('#tableGittSummary tbody');
         if (!tbody) return;
+        // 종합 모드: 펄스별 분석 결과 카드 전체를 숨긴다 (개별 모드에서 복원)
+        var tbl = $('tableGittSummary');
+        var tableCard = tbl && tbl.parentElement ? tbl.parentElement.parentElement : null;
+        if (tableCard) tableCard.style.display = gittCombined ? 'none' : '';
+        if (gittCombined) return;
         var f = displayedGittFile();
         if (!f) {
             tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:40px 0;">GITT 파일을 업로드하거나 사이드바 라이브러리에서 GITT 체크박스를 선택하면 펄스별 분석 결과가 표시됩니다.</td></tr>';
@@ -1019,17 +1111,24 @@
     // 6. 내보내기 (xlsx)
     // ==================================================================
     function exportGittXlsx() {
-        var f = displayedGittFile();
-        if (!f) { alert('내보낼 GITT 분석 결과가 없습니다.'); return; }
-        var data = [['Mode', 'Run', 'PulseNo', 'tau_s', 'E0_V', 'E_tau_V', 'E_eq_V', 'dEt_V', 'dEs_V', 'D_cm2_s', 'log10D']];
-        f.pulses.forEach(function (p) {
-            data.push([p.mode, p.run, p.pulseNo, p.tau, p.E0, p.E_tau, p.E_eq, p.dEt, p.dEs,
-                p.D != null ? p.D : '', p.logD != null ? p.logD : '']);
+        // 개별 모드: 현재 페이지 파일. 종합 모드: 선택한 파일들(File 컬럼 추가).
+        var files = gittCombined ? combinedFiles() : (displayedGittFile() ? [displayedGittFile()] : []);
+        if (!files.length) { alert('내보낼 GITT 분석 결과가 없습니다.'); return; }
+        var header = ['Mode', 'Run', 'PulseNo', 'tau_s', 'E0_V', 'E_tau_V', 'E_eq_V', 'dEt_V', 'dEs_V', 'D_cm2_s', 'log10D'];
+        if (gittCombined) header.unshift('File');
+        var data = [header];
+        files.forEach(function (f) {
+            f.pulses.forEach(function (p) {
+                var row = [p.mode, p.run, p.pulseNo, p.tau, p.E0, p.E_tau, p.E_eq, p.dEt, p.dEs,
+                    p.D != null ? p.D : '', p.logD != null ? p.logD : ''];
+                if (gittCombined) row.unshift(f.name);
+                data.push(row);
+            });
         });
         var ws = XLSX.utils.aoa_to_sheet(data);
         var wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'GITT Results');
-        var base = shortName(f.name);
+        var base = (files.length === 1) ? shortName(files[0].name) : ('GITT_종합_' + files.length + '개');
         if (!base) base = 'GITT';
         var d = new Date();
         var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');

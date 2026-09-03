@@ -400,17 +400,19 @@
       .sort(function (a, b) { return a.min - b.min; });
   }
 
-  // [신규] 사용자 지정 전압 구간마다 산화(+I 최대)·환원(-I 최소) 피크를 찾는다.
+  // [신규] 사용자 지정 전압 구간마다 선택한 종류의 피크를 찾는다.
+  //   type='anodic' → 산화(+I 최대)만, 'cathodic' → 환원(-I 최소)만, 'both' → 둘 다.
   function peaksInWindows(cc, wins) {
     return wins.map(function (w) {
       var aBest = null, cBest = null, k;
+      var wantA = (w.type !== 'cathodic'), wantC = (w.type !== 'anodic');
       for (k = 0; k < cc.V.length; k++) {
         var v = cc.V[k], i = cc.I[k];
         if (v < w.min || v > w.max) continue;
-        if (i > 0) { if (!aBest || i > aBest.i) aBest = { v: v, i: i }; }
-        else if (i < 0) { if (!cBest || i < cBest.i) cBest = { v: v, i: i }; }
+        if (wantA && i > 0) { if (!aBest || i > aBest.i) aBest = { v: v, i: i }; }
+        else if (wantC && i < 0) { if (!cBest || i < cBest.i) cBest = { v: v, i: i }; }
       }
-      return { min: w.min, max: w.max, anodic: aBest, cathodic: cBest };
+      return { min: w.min, max: w.max, type: w.type, anodic: aBest, cathodic: cBest };
     });
   }
 
@@ -430,14 +432,18 @@
       html += '<div style="margin-bottom:12px;">'
         + '<div style="font-size:12px; font-weight:600; margin-bottom:4px; color:' + f.color + ';">● ' + f.name + ' · ' + f.selNum + '사이클</div>';
       if (wins.length) {
-        // 구간 모드: 각 전압 구간의 산화·환원 피크
+        // 구간 모드: 각 전압 구간에서 '선택한 종류'의 피크만 표시
         var rows = cc ? peaksInWindows(cc, wins) : [];
         html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
-          + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">전압 구간</th><th style="padding:3px 6px;color:#f59e0b;">산화 (Anodic)</th><th style="padding:3px 6px;color:#60a5fa;">환원 (Cathodic)</th></tr></thead><tbody>';
+          + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">전압 구간</th><th style="padding:3px 6px;">종류</th><th style="padding:3px 6px;">Peak Voltage (Current)</th></tr></thead><tbody>';
         rows.forEach(function (r) {
-          html += '<tr><td style="padding:3px 6px;">' + r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V</td>'
-            + '<td style="padding:3px 6px;">' + fmtPeak(r.anodic) + '</td>'
-            + '<td style="padding:3px 6px;">' + fmtPeak(r.cathodic) + '</td></tr>';
+          var range = r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V';
+          if (r.type !== 'cathodic') {
+            html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#f59e0b;font-weight:600;">산화 (Anodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.anodic) + '</td></tr>';
+          }
+          if (r.type !== 'anodic') {
+            html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#60a5fa;font-weight:600;">환원 (Cathodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.cathodic) + '</td></tr>';
+          }
         });
         html += '</tbody></table>';
       } else {
@@ -480,21 +486,29 @@
       mx.className = 'select-field'; mx.style.cssText = 'margin-bottom:0; height:30px; width:90px;';
       if (w.max != null && !isNaN(w.max)) mx.value = w.max;
       mx.addEventListener('input', function () { var v = parseFloat(this.value); cvWindows[idx].max = isNaN(v) ? null : v; renderAll(); });
+      // 피크 종류 선택: 산화 / 환원 / 둘 다
+      var kind = document.createElement('select');
+      kind.className = 'select-field'; kind.style.cssText = 'margin-bottom:0; height:30px; width:90px;';
+      [['anodic', '산화'], ['cathodic', '환원'], ['both', '둘 다']].forEach(function (o) {
+        var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; kind.appendChild(op);
+      });
+      kind.value = w.type || 'both';
+      kind.addEventListener('change', function () { cvWindows[idx].type = this.value; renderAll(); });
       var rm = document.createElement('button');
       rm.textContent = '✕'; rm.title = '구간 삭제';
       rm.style.cssText = 'background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px;';
       rm.addEventListener('click', function () { cvWindows.splice(idx, 1); renderWindowList(); renderAll(); });
       row.appendChild(document.createTextNode('구간 ' + (idx + 1) + '  '));
-      row.appendChild(mn); row.appendChild(tilde); row.appendChild(mx); row.appendChild(rm);
+      row.appendChild(mn); row.appendChild(tilde); row.appendChild(mx); row.appendChild(kind); row.appendChild(rm);
       el.appendChild(row);
     });
   }
 
   function addWindow() {
-    cvWindows.push({ min: null, max: null });
+    cvWindows.push({ min: null, max: null, type: 'anodic' });
     renderWindowList();
   }
-
+  
   // ==========================================================================
   // 데이터 라이브러리 연동
   //  - CV 파일을 사이드바 '데이터 라이브러리'에 등록한다(GITT와 동일한 방식).

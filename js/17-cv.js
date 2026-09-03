@@ -392,14 +392,14 @@
     return { anodic: findPeaks(aV, aI, true, SENS), cathodic: findPeaks(cV, cI, false, SENS) };
   }
 
-  // 유효한(숫자 min/max) 전압 구간만 추림
+  // 유효한(숫자 min/max) 전압 구간만 추림. type: 'anodic'|'cathodic'|'both'(기본)
   function validWindows() {
     return cvWindows.filter(function (w) {
       return w && w.min != null && w.max != null && !isNaN(w.min) && !isNaN(w.max) && w.min !== w.max;
-    }).map(function (w) { return { min: Math.min(w.min, w.max), max: Math.max(w.min, w.max) }; })
+    }).map(function (w) { return { min: Math.min(w.min, w.max), max: Math.max(w.min, w.max), type: w.type || 'both' }; })
       .sort(function (a, b) { return a.min - b.min; });
   }
-
+  
   // [신규] 사용자 지정 전압 구간마다 선택한 종류의 피크를 찾는다.
   //   type='anodic' → 산화(+I 최대)만, 'cathodic' → 환원(-I 최소)만, 'both' → 둘 다.
   function peaksInWindows(cc, wins) {

@@ -15,6 +15,7 @@
   'use strict';
   // 파일별 상태: { id, name, color, cycles:[{num,V,I,span,npts}], selNum }
   var cvFiles = [], cvChart = null, cvWorker = null, cvJob = 0, _fid = 0;
+  var cvWindows = [];   // 사용자 지정 피크 검출 전압 구간 목록 [{min, max}]
   var _queue = [], _parsing = false;
   // 파일별 구분 색상 팔레트 (어두운 배경에서 잘 구분되는 색)
   var CV_COLORS = ['#f59e0b', '#60a5fa', '#34d399', '#f472b6', '#a78bfa', '#fbbf24', '#22d3ee', '#fb7185', '#4ade80', '#c084fc'];
@@ -264,10 +265,20 @@
     return null;
   }
 
-  // ---- 그래프 + 피크표 렌더 (모든 파일 오버레이) ----
+  // 라이브러리 체크박스(compareEnabled)로 표시 여부 판단. 라이브러리에 없으면 기본 표시.
+  function isEnabled(f) {
+    if (typeof datasetLibrary === 'undefined') return true;
+    for (var i = 0; i < datasetLibrary.length; i++) {
+      if (datasetLibrary[i].id === f.id) return datasetLibrary[i].compareEnabled !== false;
+    }
+    return true;
+  }
+
+  // ---- 그래프 + 피크표 렌더 (체크된 파일만 오버레이) ----
   function renderAll() {
     var datasets = [], xmin = Infinity, xmax = -Infinity;
     cvFiles.forEach(function (f) {
+      if (!isEnabled(f)) return;                 // 라이브러리 체크 해제 → 그래프에서 숨김
       var cc = getCycle(f, f.selNum); if (!cc) return;
       var pts = [], j;
       for (j = 0; j < cc.V.length; j++) {
@@ -292,9 +303,26 @@
     if (!datasets.length) return;
     // 데이터 기준 x축(전압) 범위를 명시 → CV 루프(시작·끝 전압 동일)에서 축 붕괴 방지
     if (!isFinite(xmin)) { xmin = 0; xmax = 1; }
+    // 설정한 전압 구간을 그래프에 반투명 밴드로 표시
+    var bandPlugin = {
+      id: 'cvWindowBands',
+      beforeDatasetsDraw: function (chart) {
+        if (!cvWindows.length) return;
+        var xs = chart.scales.x, area = chart.chartArea, c = chart.ctx;
+        c.save(); c.fillStyle = 'rgba(148,163,184,0.12)';
+        cvWindows.forEach(function (w) {
+          if (w.min == null || w.max == null || isNaN(w.min) || isNaN(w.max)) return;
+          var x1 = xs.getPixelForValue(Math.min(w.min, w.max));
+          var x2 = xs.getPixelForValue(Math.max(w.min, w.max));
+          c.fillRect(x1, area.top, x2 - x1, area.bottom - area.top);
+        });
+        c.restore();
+      }
+    };
     cvChart = new Chart(ctx, {
       type: 'line',
       data: { datasets: datasets },
+      plugins: [bandPlugin],
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: 'nearest', intersect: false },
@@ -355,7 +383,7 @@
   }
 
   function detectPeaks(cc) {
-    // 산화(anodic)=양(+)전류 구간, 환원(cathodic)=음(-)전류 구간으로 나눠 피크 검출
+    // 산화(anodic)=양(+)전류 구간, 환원(cathodic)=음(-)전류 구간으로 나눠 자동 검출
     var aV = [], aI = [], cV = [], cI = [], k, SENS = 0.08;
     for (k = 0; k < cc.V.length; k++) {
       if (cc.I[k] > 0) { aV.push(cc.V[k]); aI.push(cc.I[k]); }
@@ -364,26 +392,107 @@
     return { anodic: findPeaks(aV, aI, true, SENS), cathodic: findPeaks(cV, cI, false, SENS) };
   }
 
+  // 유효한(숫자 min/max) 전압 구간만 추림
+  function validWindows() {
+    return cvWindows.filter(function (w) {
+      return w && w.min != null && w.max != null && !isNaN(w.min) && !isNaN(w.max) && w.min !== w.max;
+    }).map(function (w) { return { min: Math.min(w.min, w.max), max: Math.max(w.min, w.max) }; })
+      .sort(function (a, b) { return a.min - b.min; });
+  }
+
+  // [신규] 사용자 지정 전압 구간마다 산화(+I 최대)·환원(-I 최소) 피크를 찾는다.
+  function peaksInWindows(cc, wins) {
+    return wins.map(function (w) {
+      var aBest = null, cBest = null, k;
+      for (k = 0; k < cc.V.length; k++) {
+        var v = cc.V[k], i = cc.I[k];
+        if (v < w.min || v > w.max) continue;
+        if (i > 0) { if (!aBest || i > aBest.i) aBest = { v: v, i: i }; }
+        else if (i < 0) { if (!cBest || i < cBest.i) cBest = { v: v, i: i }; }
+      }
+      return { min: w.min, max: w.max, anodic: aBest, cathodic: cBest };
+    });
+  }
+
+  function fmtPeak(p) {
+    if (!p) return '<span style="color:#6b7280;">-</span>';
+    return p.v.toFixed(3) + ' V <span style="color:#9ca3af;">(' + (p.i * 1000).toFixed(3) + ' mA)</span>';
+  }
+
   function renderPeakTable() {
     var el = $('cvPeakTable'); if (!el) return;
-    if (!cvFiles.length) { el.innerHTML = '<span style="color:#6b7280; font-size:12px;">파일을 로드하면 산화·환원 피크가 표시됩니다.</span>'; return; }
-    function rowsFor(list, label, color) {
-      if (!list.length) return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;color:#6b7280;" colspan="2">검출된 피크 없음</td></tr>';
-      return list.map(function (p) {
-        return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;">' + p.v.toFixed(3) + ' V</td><td style="padding:3px 6px;color:#9ca3af;">' + (p.i * 1000).toFixed(3) + ' mA</td></tr>';
-      }).join('');
-    }
+    var files = cvFiles.filter(isEnabled);
+    if (!files.length) { el.innerHTML = '<span style="color:#6b7280; font-size:12px;">파일을 로드하면 산화·환원 피크가 표시됩니다.</span>'; return; }
+    var wins = validWindows();
     var html = '';
-    cvFiles.forEach(function (f) {
+    files.forEach(function (f) {
       var cc = getCycle(f, f.selNum);
-      var pk = cc ? detectPeaks(cc) : { anodic: [], cathodic: [] };
       html += '<div style="margin-bottom:12px;">'
-        + '<div style="font-size:12px; font-weight:600; margin-bottom:4px; color:' + f.color + ';">● ' + f.name + ' · ' + f.selNum + '사이클</div>'
-        + '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
-        + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">구분</th><th style="padding:3px 6px;">Voltage</th><th style="padding:3px 6px;">Peak Current</th></tr></thead>'
-        + '<tbody>' + rowsFor(pk.anodic, '산화 (Anodic)', '#f59e0b') + rowsFor(pk.cathodic, '환원 (Cathodic)', '#60a5fa') + '</tbody></table></div>';
+        + '<div style="font-size:12px; font-weight:600; margin-bottom:4px; color:' + f.color + ';">● ' + f.name + ' · ' + f.selNum + '사이클</div>';
+      if (wins.length) {
+        // 구간 모드: 각 전압 구간의 산화·환원 피크
+        var rows = cc ? peaksInWindows(cc, wins) : [];
+        html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+          + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">전압 구간</th><th style="padding:3px 6px;color:#f59e0b;">산화 (Anodic)</th><th style="padding:3px 6px;color:#60a5fa;">환원 (Cathodic)</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          html += '<tr><td style="padding:3px 6px;">' + r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V</td>'
+            + '<td style="padding:3px 6px;">' + fmtPeak(r.anodic) + '</td>'
+            + '<td style="padding:3px 6px;">' + fmtPeak(r.cathodic) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        // 구간 미설정: 기존 자동 검출
+        var pk = cc ? detectPeaks(cc) : { anodic: [], cathodic: [] };
+        function rowsFor(list, label, color) {
+          if (!list.length) return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;color:#6b7280;" colspan="2">검출된 피크 없음</td></tr>';
+          return list.map(function (p) {
+            return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;">' + p.v.toFixed(3) + ' V</td><td style="padding:3px 6px;color:#9ca3af;">' + (p.i * 1000).toFixed(3) + ' mA</td></tr>';
+          }).join('');
+        }
+        html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+          + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">구분</th><th style="padding:3px 6px;">Voltage</th><th style="padding:3px 6px;">Peak Current</th></tr></thead>'
+          + '<tbody>' + rowsFor(pk.anodic, '산화 (Anodic)', '#f59e0b') + rowsFor(pk.cathodic, '환원 (Cathodic)', '#60a5fa') + '</tbody></table>';
+      }
+      html += '</div>';
     });
     el.innerHTML = html;
+  }
+
+  // ---- 피크 검출 전압 구간 편집 UI ----
+  function renderWindowList() {
+    var el = $('cvWindowList'); if (!el) return;
+    el.innerHTML = '';
+    if (!cvWindows.length) {
+      el.innerHTML = '<div style="font-size:11px; color:var(--text-muted);">설정한 구간이 없습니다. 구간을 추가하면 각 구간의 피크를, 없으면 자동 검출 결과를 표시합니다.</div>';
+      return;
+    }
+    cvWindows.forEach(function (w, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:6px; flex-wrap:wrap;';
+      var mn = document.createElement('input');
+      mn.type = 'number'; mn.step = '0.01'; mn.placeholder = '최소 V';
+      mn.className = 'select-field'; mn.style.cssText = 'margin-bottom:0; height:30px; width:90px;';
+      if (w.min != null && !isNaN(w.min)) mn.value = w.min;
+      mn.addEventListener('input', function () { var v = parseFloat(this.value); cvWindows[idx].min = isNaN(v) ? null : v; renderAll(); });
+      var tilde = document.createElement('span'); tilde.textContent = '~'; tilde.style.color = 'var(--text-muted)';
+      var mx = document.createElement('input');
+      mx.type = 'number'; mx.step = '0.01'; mx.placeholder = '최대 V';
+      mx.className = 'select-field'; mx.style.cssText = 'margin-bottom:0; height:30px; width:90px;';
+      if (w.max != null && !isNaN(w.max)) mx.value = w.max;
+      mx.addEventListener('input', function () { var v = parseFloat(this.value); cvWindows[idx].max = isNaN(v) ? null : v; renderAll(); });
+      var rm = document.createElement('button');
+      rm.textContent = '✕'; rm.title = '구간 삭제';
+      rm.style.cssText = 'background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px;';
+      rm.addEventListener('click', function () { cvWindows.splice(idx, 1); renderWindowList(); renderAll(); });
+      row.appendChild(document.createTextNode('구간 ' + (idx + 1) + '  '));
+      row.appendChild(mn); row.appendChild(tilde); row.appendChild(mx); row.appendChild(rm);
+      el.appendChild(row);
+    });
+  }
+
+  function addWindow() {
+    cvWindows.push({ min: null, max: null });
+    renderWindowList();
   }
 
   // ==========================================================================
@@ -408,6 +517,7 @@
         existing.keyMetric = metric;
         existing.lastConvertedAt = now;
         existing.conversionStatus = 'converted';
+        existing.compareEnabled = true;            // 업로드 직후 그래프에 보이도록 체크 상태로
         existing.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
         if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('CV DB 갱신 실패:', e); }); } catch (e) {} }
       } else {
@@ -421,7 +531,7 @@
           filename: f.name, uploadedAt: now, lastConvertedAt: now,
           conversionStatus: 'converted', keyMetric: metric,
           processedCycles: {}, totalCycles: 0, ice: '-',
-          compareEnabled: false
+          compareEnabled: true                     // 업로드 직후 그래프에 보이도록 체크 상태로
         };
         normalizeDataset(ds);                      // ds.lineColor(라이브러리 색) 계산
         if (ds.lineColor) f.color = ds.lineColor;  // 그래프 색을 라이브러리 색으로 통일
@@ -434,21 +544,26 @@
     } catch (e) { console.warn('CV 라이브러리 등록 실패:', e); }
   }
 
-  // 라이브러리에서 CV 항목 클릭 시(09번) 호출. 필요하면 저장된 데이터로 복원 후 CV 탭을 연다.
+  // 라이브러리에서 CV 항목 클릭 시(09번) 호출. 필요하면 저장된 데이터로 복원하고, 체크(표시) 상태로 만든 뒤 CV 탭을 연다.
   function showDataset(id) {
-    var present = null, i;
+    var present = null, i, dsRef = null;
     for (i = 0; i < cvFiles.length; i++) { if (cvFiles[i].id === id) { present = cvFiles[i]; break; } }
-    if (!present && typeof datasetLibrary !== 'undefined') {
-      var ds = null;
-      for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { ds = datasetLibrary[i]; break; } }
-      if (ds && ds.cvPayload && ds.cvPayload.cycles && ds.cvPayload.cycles.length) {
-        var color = ds.lineColor || ds.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];  // 라이브러리 색 우선
-        var selNum = (ds.cvPayload.selNum != null) ? ds.cvPayload.selNum : ds.cvPayload.cycles[0].num;
-        cvFiles.push({ id: id, name: ds.filename || ds.dataName, color: color, cycles: ds.cvPayload.cycles, selNum: selNum });
-        refreshFileList();
-        renderAll();
-      }
+    if (typeof datasetLibrary !== 'undefined') {
+      for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { dsRef = datasetLibrary[i]; break; } }
     }
+    if (!present && dsRef && dsRef.cvPayload && dsRef.cvPayload.cycles && dsRef.cvPayload.cycles.length) {
+      var color = dsRef.lineColor || dsRef.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];  // 라이브러리 색 우선
+      var selNum = (dsRef.cvPayload.selNum != null) ? dsRef.cvPayload.selNum : dsRef.cvPayload.cycles[0].num;
+      cvFiles.push({ id: id, name: dsRef.filename || dsRef.dataName, color: color, cycles: dsRef.cvPayload.cycles, selNum: selNum });
+      refreshFileList();
+    }
+    // 클릭 = 보기 → 체크(표시) 상태로 만든다
+    if (dsRef && dsRef.compareEnabled === false) {
+      dsRef.compareEnabled = true;
+      if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(dsRef)).catch(function () {}); } catch (e) {} }
+      if (typeof renderDatasetLibraryUI === 'function') renderDatasetLibraryUI();
+    }
+    renderAll();
     activateCVTab();
   }
 
@@ -460,10 +575,13 @@
   }
 
   // 외부(09-dataset-library.js)에서 호출할 공개 API
-  window.CVAnalyzer = { activateTab: activateCVTab, showDataset: showDataset, removeDataset: removeDatasetFromChart };
+  //  - refresh: 체크박스(compareEnabled) 변경 시 CV 그래프/피크표를 다시 그림
+  window.CVAnalyzer = { activateTab: activateCVTab, showDataset: showDataset, removeDataset: removeDatasetFromChart, refresh: renderAll };
 
   document.addEventListener('DOMContentLoaded', function () {
     var btn = $('btnTabCV'); if (btn) btn.addEventListener('click', activateCVTab);
+    var addWin = $('cvAddWindow'); if (addWin) addWin.addEventListener('click', addWindow);
+    renderWindowList();
     var fileInput = $('cvFileInput');
     if (fileInput) fileInput.addEventListener('change', function (e) { if (e.target.files && e.target.files.length) addFiles(e.target.files); e.target.value = ''; });
     var drop = $('cvDropZone');

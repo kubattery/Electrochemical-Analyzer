@@ -819,7 +819,7 @@
                         </div>
                     </div>
                 </div>
-<!-- Tab: CV (Cyclic Voltammetry) 분석 -->
+            <!-- Tab: CV (Cyclic Voltammetry) 분석 -->
                 <div class="tab-panel" id="tab-cv">
                     <div style="display:flex; flex-direction:column; gap:14px; height:100%;">
                         <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:14px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
@@ -837,6 +837,17 @@
                             <div style="position:relative; width:100%; max-width:600px; aspect-ratio:1 / 1;">
                                 <canvas id="chartCV"></canvas>
                             </div>
+                            <!-- 피크 검출 전압 구간 설정 -->
+                        <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 16px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+                                <div style="font-weight:600; font-size:13px; display:flex; align-items:center; gap:6px;">
+                                    <span class="material-icons-round" style="font-size:18px; color:var(--color-primary);">tune</span>
+                                    피크 검출 전압 구간
+                                </div>
+                                <button id="cvAddWindow" style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:var(--text); border-radius:6px; height:30px; padding:0 12px; font-size:12px; cursor:pointer;">+ 구간 추가</button>
+                            </div>
+                            <div id="cvWindowList" style="display:flex; flex-direction:column; gap:6px;"></div>
+                        </div>
                             <div style="font-size:11px; color:#9ca3af; text-align:center; margin-top:6px; opacity:0.8;">🔍 마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원래대로</div>
                         </div>
                         <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 16px;">

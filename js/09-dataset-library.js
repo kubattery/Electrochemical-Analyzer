@@ -581,6 +581,13 @@ function renderDatasetLibraryUI() {
                     }
                     return; // 일반 분석(runAnalysis) 대상 아님
                 }
+                // CV 데이터셋: 체크박스가 CV 탭 그래프 표시/숨김을 제어 (17-cv.js)
+                if (ds.experimentType === 'cv') {
+                    if (window.CVAnalyzer && typeof CVAnalyzer.refresh === 'function') {
+                        CVAnalyzer.refresh();
+                    }
+                    return; // 일반 분석(runAnalysis) 대상 아님
+                }
                 if (hasActiveDataset()) runAnalysis();
             });
             

@@ -767,30 +767,8 @@
     }
   }
 
-  function drawK1K2(out) {
-    var el = $('chartK1K2'); if (!el || typeof Chart === 'undefined') return;
-    if (k1k2Chart) { k1k2Chart.destroy(); k1k2Chart = null; }
-    if (!out || !out.grid) return;
-    var total = out.grid.map(function (v, i) { return { x: v, y: out.totCurve[i] }; });
-    var cap = out.grid.map(function (v, i) { return { x: v, y: out.capCurve[i] }; });
-    k1k2Chart = new Chart(el.getContext('2d'), {
-      type: 'line',
-      data: {
-        datasets: [
-          { label: 'Total @ ' + out.dispRate + ' mV/s', data: total, borderColor: '#e5e7eb', borderWidth: 1.4, pointRadius: 0, fill: false, tension: 0 },
-          { label: 'Capacitive (k₁v)', data: cap, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.25)', borderWidth: 1, pointRadius: 0, fill: 'origin', tension: 0 }
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
-        scales: {
-          x: { type: 'linear', min: out.grid[0], max: out.grid[out.grid.length - 1], title: { display: true, text: 'Voltage (V)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
-          y: { title: { display: true, text: 'Current (mA)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
-        },
-        plugins: { legend: { display: true, labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } } }, tooltip: { enabled: true } }
-      }
-    });
-  }
+  // k1/k2 그래프는 제외됨 (표·b-value만 표시). 호출부 호환을 위해 no-op 로 유지.
+  function drawK1K2() { /* 그래프 미사용 */ }
 
   // ==========================================================================
   // 데이터 라이브러리 연동

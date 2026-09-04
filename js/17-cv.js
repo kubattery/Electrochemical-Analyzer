@@ -30,7 +30,7 @@
     var btn = $('btnTabCV'), panel = $('tab-cv');
     if (btn) btn.classList.add('active');
     if (panel) panel.classList.add('active');
-    setTimeout(function () { if (cvChart) cvChart.resize(); }, 60);
+    setTimeout(function () { if (cvChart) cvChart.resize(); if (k1k2Chart) k1k2Chart.resize(); }, 60);
   }
 
   // ---- 업로드/파싱 (여러 파일을 순차 처리) ----
@@ -91,6 +91,7 @@
     if (!res) { setStatus(filename + ': 전압/전류 컬럼을 찾지 못했거나 데이터가 부족합니다.'); parseNext(); return; }
     var color = CV_COLORS[cvFiles.length % CV_COLORS.length];
     var entry = { id: 'cv' + Date.now() + '_' + (++_fid), name: filename, color: color, cycles: res.cycles, selNum: res.defaultNum };
+    entry.rateData = buildRateData(rows);   // k1/k2 분석용: Time·Voltage로 스캔레이트 구간 자동 분리
     cvFiles.push(entry);
     registerCvDataset(entry);   // 데이터 라이브러리(사이드바)에 등록
     refreshFileList();
@@ -294,6 +295,7 @@
     });
     renderCVChart(datasets, xmin, xmax);
     renderPeakTable();
+    renderK1K2();
   }
 
   function renderCVChart(datasets, xmin, xmax) {
@@ -399,7 +401,7 @@
     }).map(function (w) { return { min: Math.min(w.min, w.max), max: Math.max(w.min, w.max), type: w.type || 'both' }; })
       .sort(function (a, b) { return a.min - b.min; });
   }
-  
+
   // [신규] 사용자 지정 전압 구간마다 선택한 종류의 피크를 찾는다.
   //   type='anodic' → 산화(+I 최대)만, 'cathodic' → 환원(-I 최소)만, 'both' → 둘 다.
   function peaksInWindows(cc, wins) {
@@ -508,7 +510,288 @@
     cvWindows.push({ min: null, max: null, type: 'anodic' });
     renderWindowList();
   }
-  
+
+  // ==========================================================================
+  // k1/k2 (Dunn) 분석 — capacitive vs diffusion 기여도 정량 분리
+  //   i(V) = k1(V)·v + k2(V)·v^1/2   (v = scan rate)
+  //   → i/v^1/2 = k1·v^1/2 + k2  의 전압별 선형 회귀로 k1, k2 산출.
+  //   스캔레이트는 파일의 Time·Voltage 로 자동 계산(ΔV/Δt), 한 사이클에 섞인 여러 rate를 분리.
+  // ==========================================================================
+  var _k1k2 = { fileId: null, branch: 'anodic', excluded: {} };  // excluded: {rate:true}
+  var k1k2Chart = null;
+
+  // 파일 원본 행에서 스캔레이트 구간을 만든다.
+  //  반환: { cycleNum: { anodic:[{rate,V[],I[]}], cathodic:[...] } }  (Time 컬럼 없으면 null)
+  function buildRateData(rows) {
+    if (!rows || rows.length < 3) return null;
+    var headerIdx = -1, tCol = -1, vCol = -1, iCol = -1, cCol = -1, sCol = -1, r, c;
+    for (r = 0; r < Math.min(20, rows.length); r++) {
+      var row = rows[r]; if (!row) continue;
+      var tc = -1, vc = -1, ic = -1, cyc = -1, stp = -1;
+      for (c = 0; c < row.length; c++) {
+        var s = String(row[c] == null ? '' : row[c]).toLowerCase().trim();
+        if (tc < 0 && (s.indexOf('test time') >= 0 || s === 'time' || (s.indexOf('time') >= 0 && s.indexOf('(s)') >= 0) || s.indexOf('시험 시간') >= 0 || (s.indexOf('시간') >= 0 && s.indexOf('스텝') < 0))) tc = c;
+        if (vc < 0 && (s.indexOf('voltage') >= 0 || s.indexOf('전압') >= 0 || s === 'v' || s.indexOf('potential') >= 0)) vc = c;
+        if (ic < 0 && (s.indexOf('current') >= 0 || s.indexOf('전류') >= 0 || s === 'i' || s.indexOf('(a)') >= 0 || s.indexOf('(ma)') >= 0)) ic = c;
+        if (cyc < 0 && s.indexOf('cycle') >= 0 && (s.indexOf('no') >= 0 || s.indexOf('num') >= 0 || s.indexOf('번호') >= 0)) cyc = c;
+        if (stp < 0 && s.indexOf('step') >= 0 && s.indexOf('no') >= 0) stp = c;
+      }
+      if (vc >= 0 && ic >= 0 && tc >= 0) { headerIdx = r; tCol = tc; vCol = vc; iCol = ic; cCol = cyc; sCol = stp; break; }
+    }
+    if (tCol < 0 || vCol < 0 || iCol < 0) return null;   // Time 없으면 스캔레이트 자동계산 불가
+
+    // 행 수집
+    var T = [], V = [], I = [], C = [], S = [];
+    for (var r2 = headerIdx + 1; r2 < rows.length; r2++) {
+      var row2 = rows[r2]; if (!row2) continue;
+      var t = parseFloat(row2[tCol]), v = parseFloat(row2[vCol]), i = parseFloat(row2[iCol]);
+      if (isNaN(t) || isNaN(v) || isNaN(i)) continue;
+      T.push(t); V.push(v); I.push(i);
+      C.push(cCol >= 0 ? parseFloat(row2[cCol]) : 0);
+      S.push(sCol >= 0 ? row2[sCol] : 0);
+    }
+    if (V.length < 20) return null;
+
+    // 사이클별 처리
+    var byCyc = {}, order = [], k;
+    for (k = 0; k < V.length; k++) {
+      var cn = isNaN(C[k]) ? 0 : C[k];
+      if (!Object.prototype.hasOwnProperty.call(byCyc, cn)) { byCyc[cn] = []; order.push(cn); }
+      byCyc[cn].push(k);
+    }
+    var out = {};
+    order.forEach(function (cn) {
+      var idx = byCyc[cn];
+      // 사이클 전압 범위
+      var vmn = Infinity, vmx = -Infinity, j;
+      for (j = 0; j < idx.length; j++) { var vv = V[idx[j]]; if (vv < vmn) vmn = vv; if (vv > vmx) vmx = vv; }
+      var cycSpan = vmx - vmn; if (cycSpan <= 0) return;
+      // 이 사이클에 Step 정보가 있으면 스텝 변화로만 분할(가장 견고),
+      // 없으면 전압 스윕 방향 반전(정점)으로 분할.
+      var hasStep = false;
+      for (j = 1; j < idx.length; j++) { if (S[idx[j]] !== S[idx[0]]) { hasStep = true; break; } }
+      var segs = [], segStart = 0;
+      if (hasStep) {
+        for (j = 1; j < idx.length; j++) {
+          if (S[idx[j]] !== S[idx[j - 1]]) { segs.push([segStart, j - 1]); segStart = j; }
+        }
+      } else {
+        // 정점 기반: 전압이 상단/하단 임계에 도달할 때마다 방향 전환점을 경계로
+        var hiThr = vmx - cycSpan * 0.1, loThr = vmn + cycSpan * 0.1, zone = 0;
+        for (j = 0; j < idx.length; j++) {
+          var vv2 = V[idx[j]];
+          if (vv2 >= hiThr) { if (zone === -1) { segs.push([segStart, j - 1]); segStart = j; } zone = 1; }
+          else if (vv2 <= loThr) { if (zone === 1) { segs.push([segStart, j - 1]); segStart = j; } zone = -1; }
+        }
+      }
+      segs.push([segStart, idx.length - 1]);
+      var anodic = [], cathodic = [];
+      segs.forEach(function (sg) {
+        var a = sg[0], b = sg[1]; if (b - a < 10) return;
+        var svmn = Infinity, svmx = -Infinity, p;
+        for (p = a; p <= b; p++) { var x = V[idx[p]]; if (x < svmn) svmn = x; if (x > svmx) svmx = x; }
+        if (svmx - svmn < 0.7 * cycSpan) return;               // 전 구간 스윕만 사용(formation 조각 제외)
+        var dt = T[idx[b]] - T[idx[a]]; if (dt <= 0) return;
+        var rate = Math.round((svmx - svmn) / dt * 1000 * 100) / 100;   // mV/s, 소수 2자리
+        if (rate <= 0) return;
+        var up = V[idx[b]] > V[idx[a]];
+        // V 기준 정렬 + 다운샘플
+        var pts = [];
+        for (p = a; p <= b; p++) pts.push([V[idx[p]], I[idx[p]]]);
+        pts.sort(function (m, n) { return m[0] - n[0]; });
+        var maxN = 500, Vs = [], Is = [], step = pts.length > maxN ? Math.ceil(pts.length / maxN) : 1;
+        for (p = 0; p < pts.length; p += step) { Vs.push(pts[p][0]); Is.push(pts[p][1]); }
+        (up ? anodic : cathodic).push({ rate: rate, V: Vs, I: Is });
+      });
+      if (anodic.length || cathodic.length) out[cn] = { anodic: anodic, cathodic: cathodic };
+    });
+    return Object.keys(out).length ? out : null;
+  }
+
+  function _interp(x, xs, ys) {
+    var n = xs.length; if (x <= xs[0]) return ys[0]; if (x >= xs[n - 1]) return ys[n - 1];
+    var lo = 0, hi = n - 1;
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (xs[mid] <= x) lo = mid; else hi = mid; }
+    var t = (x - xs[lo]) / (xs[hi] - xs[lo]); return ys[lo] + t * (ys[hi] - ys[lo]);
+  }
+
+  // k1/k2 계산. 반환 null 또는 결과객체.
+  function computeK1K2(f) {
+    if (!f || !f.rateData) return null;
+    var rd = f.rateData[f.selNum]; if (!rd) return null;
+    var branchArr = (_k1k2.branch === 'cathodic') ? rd.cathodic : rd.anodic;
+    if (!branchArr || !branchArr.length) return null;
+    // rate별 대표 스윕(같은 rate 여러개면 첫 번째) + 제외 적용
+    var byRate = {};
+    branchArr.forEach(function (sg) { if (!byRate[sg.rate]) byRate[sg.rate] = sg; });
+    var rates = Object.keys(byRate).map(parseFloat).sort(function (a, b) { return a - b; });
+    rates = rates.filter(function (r) { return !_k1k2.excluded[r]; });
+    if (rates.length < 2) return { rates: rates, tooFew: true };
+    // 공통 전압 그리드
+    var lo = -Infinity, hi = Infinity;
+    rates.forEach(function (r) { var V = byRate[r].V; if (V[0] > lo) lo = V[0]; if (V[V.length - 1] < hi) hi = V[V.length - 1]; });
+    lo += 0.02; hi -= 0.02; if (hi <= lo) return null;
+    var N = 260, grid = [], g;
+    for (g = 0; g < N; g++) grid.push(lo + (hi - lo) * g / (N - 1));
+    var varr = rates.map(function (r) { return r / 1000; }), sq = varr.map(Math.sqrt);
+    var imat = rates.map(function (r) { var sg = byRate[r]; return grid.map(function (x) { return _interp(x, sg.V, sg.I); }); });
+    // 전압별 최소제곱: 설계행렬 [v, sqrt(v)]
+    var k1 = new Array(N), k2 = new Array(N);
+    var Sxx = 0, Sxz = 0, Szz = 0;
+    for (var j = 0; j < rates.length; j++) { Sxx += varr[j] * varr[j]; Sxz += varr[j] * sq[j]; Szz += sq[j] * sq[j]; }
+    var det = Sxx * Szz - Sxz * Sxz;
+    for (g = 0; g < N; g++) {
+      var Sxy = 0, Szy = 0;
+      for (j = 0; j < rates.length; j++) { Sxy += varr[j] * imat[j][g]; Szy += sq[j] * imat[j][g]; }
+      k1[g] = (Sxy * Szz - Szy * Sxz) / det;
+      k2[g] = (Sxx * Szy - Sxz * Sxy) / det;
+    }
+    // 기여도(%) — 전하 적분 기준
+    function trapzAbs(arr) { var s = 0; for (var i = 1; i < N; i++) s += (Math.abs(arr[i]) + Math.abs(arr[i - 1])) / 2 * (grid[i] - grid[i - 1]); return s; }
+    var contribution = rates.map(function (r, ri) {
+      var v = r / 1000, cap = grid.map(function (_, gg) { return k1[gg] * v; });
+      var pct = trapzAbs(cap) / trapzAbs(imat[ri]) * 100;
+      return { rate: r, pct: pct };
+    });
+    // b-value (log Ipeak vs log v) — 피크 전류 기반(안정적)
+    var ipeak = rates.map(function (r) { var I = byRate[r].I, mx = -Infinity, mn = Infinity, p; for (p = 0; p < I.length; p++) { if (I[p] > mx) mx = I[p]; if (I[p] < mn) mn = I[p]; } return _k1k2.branch === 'cathodic' ? Math.abs(mn) : mx; });
+    var bVal = null;
+    if (rates.length >= 2) {
+      var lx = rates.map(function (r) { return Math.log(r); }), ly = ipeak.map(function (x) { return Math.log(Math.abs(x) || 1e-12); });
+      var n = rates.length, mx2 = 0, my = 0, i2; for (i2 = 0; i2 < n; i2++) { mx2 += lx[i2]; my += ly[i2]; } mx2 /= n; my /= n;
+      var num = 0, den = 0; for (i2 = 0; i2 < n; i2++) { num += (lx[i2] - mx2) * (ly[i2] - my); den += (lx[i2] - mx2) * (lx[i2] - mx2); }
+      bVal = den ? num / den : null;
+    }
+    var dispRate = rates[rates.length - 1];  // 그래프 표시용: 가장 빠른 rate
+    var dispV = dispRate / 1000;
+    var capCurve = grid.map(function (_, gg) { return k1[gg] * dispV * 1000; });   // mA
+    var totCurve = imat[rates.length - 1].map(function (x) { return x * 1000; });   // mA
+    return {
+      rates: rates, allRates: Object.keys(byRate).map(parseFloat).sort(function (a, b) { return a - b; }),
+      grid: grid, contribution: contribution, bVal: bVal,
+      dispRate: dispRate, capCurve: capCurve, totCurve: totCurve
+    };
+  }
+
+  function currentK1K2File() {
+    var i;
+    if (_k1k2.fileId) { for (i = 0; i < cvFiles.length; i++) if (cvFiles[i].id === _k1k2.fileId) return cvFiles[i]; }
+    // 기본: rateData 가 있는 첫 파일
+    for (i = 0; i < cvFiles.length; i++) if (cvFiles[i].rateData) return cvFiles[i];
+    return cvFiles[0] || null;
+  }
+
+  // 파일/사이클/스윕이 바뀔 때 1회: formation 등 이상치(가장 느린 rate가 다음의 0.5배 미만)를 기본 제외
+  function autoInitExclude(f) {
+    var key = f.id + '|' + f.selNum + '|' + _k1k2.branch;
+    if (_k1k2.initKey === key) return;
+    _k1k2.initKey = key; _k1k2.excluded = {};
+    var rd = f.rateData && f.rateData[f.selNum]; if (!rd) return;
+    var arr = (_k1k2.branch === 'cathodic' ? rd.cathodic : rd.anodic) || [];
+    var rs = {}; arr.forEach(function (s) { rs[s.rate] = 1; });
+    var rates = Object.keys(rs).map(parseFloat).sort(function (a, b) { return a - b; });
+    while (rates.length >= 3 && rates[0] < 0.5 * rates[1]) { _k1k2.excluded[rates[0]] = true; rates.shift(); }
+  }
+
+  function renderK1K2() {
+    var host = $('cvK1K2'); if (!host) return;
+    var f = currentK1K2File();
+    if (f) autoInitExclude(f);
+    // 컨트롤 영역
+    var ctrl = $('cvK1K2Controls');
+    if (ctrl) {
+      var html = '';
+      // 파일 선택
+      html += '<label style="font-size:11px;color:var(--text-muted);">파일</label> ';
+      html += '<select id="k1k2File" class="select-field" style="margin-bottom:0;height:30px;min-width:180px;">';
+      cvFiles.forEach(function (cf) { html += '<option value="' + cf.id + '"' + (f && cf.id === f.id ? ' selected' : '') + '>' + cf.name + '</option>'; });
+      html += '</select> ';
+      html += '<label style="font-size:11px;color:var(--text-muted);margin-left:8px;">스윕</label> ';
+      html += '<select id="k1k2Branch" class="select-field" style="margin-bottom:0;height:30px;width:90px;">'
+        + '<option value="anodic"' + (_k1k2.branch === 'anodic' ? ' selected' : '') + '>산화</option>'
+        + '<option value="cathodic"' + (_k1k2.branch === 'cathodic' ? ' selected' : '') + '>환원</option></select>';
+      ctrl.innerHTML = html;
+      var fsel = $('k1k2File'); if (fsel) fsel.addEventListener('change', function () { _k1k2.fileId = this.value; _k1k2.excluded = {}; renderK1K2(); });
+      var bsel = $('k1k2Branch'); if (bsel) bsel.addEventListener('change', function () { _k1k2.branch = this.value; renderK1K2(); });
+    }
+
+    var res = $('cvK1K2Result');
+    if (!f) { if (res) res.innerHTML = '<span style="color:#6b7280;font-size:12px;">CV 파일을 업로드하면 k1/k2 분석이 표시됩니다.</span>'; drawK1K2(null); return; }
+    if (!f.rateData || !f.rateData[f.selNum]) {
+      if (res) res.innerHTML = '<span style="color:#6b7280;font-size:12px;">이 파일/사이클에서는 스캔레이트를 계산할 수 없습니다. (Time 컬럼과 한 사이클 내 여러 스캔레이트가 필요합니다)</span>';
+      drawK1K2(null); return;
+    }
+    var out = computeK1K2(f);
+    if (!out) { if (res) res.innerHTML = '<span style="color:#6b7280;font-size:12px;">스캔레이트 구간을 찾지 못했습니다.</span>'; drawK1K2(null); return; }
+
+    // 검출된 rate 체크박스 (제외/포함)
+    var chips = '<div style="margin:2px 0 8px;font-size:11px;color:var(--text-muted);">검출된 스캔레이트(체크 해제 시 fitting 제외):</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">';
+    (out.allRates || out.rates).forEach(function (r) {
+      var on = !_k1k2.excluded[r];
+      chips += '<label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" data-rate="' + r + '"' + (on ? ' checked' : '') + '> ' + r + ' mV/s</label>';
+    });
+    chips += '</div>';
+
+    if (out.tooFew) {
+      res.innerHTML = chips + '<span style="color:#fbbf24;font-size:12px;">fitting에는 스캔레이트가 최소 2개 필요합니다.</span>';
+      bindRateChecks(); drawK1K2(null); return;
+    }
+
+    // 결과 표
+    var warn = '';
+    var over = out.contribution.some(function (x) { return x.pct > 100 || x.pct < 0; });
+    if (over || (out.bVal != null && out.bVal > 1.1)) {
+      warn = '<div style="margin-top:8px;font-size:11px;color:#fbbf24;line-height:1.5;">⚠ 기여도가 0~100% 범위를 벗어나거나 b>1 이면, redox 피크가 스캔레이트에 따라 크게 이동해 고정-전압 k1/k2 방법의 전제가 약해진 경우입니다(날카로운 배터리 피크에서 흔함). b-value(피크 전류 기반)와 함께 해석하세요.</div>';
+    }
+    var rowsHtml = out.contribution.map(function (x) {
+      return '<tr><td style="padding:3px 6px;">' + x.rate + ' mV/s</td><td style="padding:3px 6px;">' + x.pct.toFixed(1) + ' %</td><td style="padding:3px 6px;color:#9ca3af;">' + (100 - x.pct).toFixed(1) + ' %</td></tr>';
+    }).join('');
+    res.innerHTML = chips
+      + '<div style="font-size:12px;margin-bottom:6px;">b-value (peak, ' + (_k1k2.branch === 'cathodic' ? '환원' : '산화') + '): <b>' + (out.bVal != null ? out.bVal.toFixed(3) : '-') + '</b> <span style="color:#9ca3af;">(0.5≈확산지배 · 1.0≈표면/용량성)</span></div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="color:#9ca3af;text-align:left;border-bottom:1px solid rgba(255,255,255,0.12);">'
+      + '<th style="padding:3px 6px;">Scan rate</th><th style="padding:3px 6px;color:#f59e0b;">Capacitive</th><th style="padding:3px 6px;color:#60a5fa;">Diffusion</th></tr></thead><tbody>'
+      + rowsHtml + '</tbody></table>' + warn;
+    bindRateChecks();
+    drawK1K2(out);
+  }
+
+  function bindRateChecks() {
+    var res = $('cvK1K2Result'); if (!res) return;
+    var boxes = res.querySelectorAll('input[type=checkbox][data-rate]');
+    for (var i = 0; i < boxes.length; i++) {
+      boxes[i].addEventListener('change', function () {
+        var r = this.getAttribute('data-rate');
+        if (this.checked) delete _k1k2.excluded[r]; else _k1k2.excluded[r] = true;
+        renderK1K2();
+      });
+    }
+  }
+
+  function drawK1K2(out) {
+    var el = $('chartK1K2'); if (!el || typeof Chart === 'undefined') return;
+    if (k1k2Chart) { k1k2Chart.destroy(); k1k2Chart = null; }
+    if (!out || !out.grid) return;
+    var total = out.grid.map(function (v, i) { return { x: v, y: out.totCurve[i] }; });
+    var cap = out.grid.map(function (v, i) { return { x: v, y: out.capCurve[i] }; });
+    k1k2Chart = new Chart(el.getContext('2d'), {
+      type: 'line',
+      data: {
+        datasets: [
+          { label: 'Total @ ' + out.dispRate + ' mV/s', data: total, borderColor: '#e5e7eb', borderWidth: 1.4, pointRadius: 0, fill: false, tension: 0 },
+          { label: 'Capacitive (k₁v)', data: cap, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.25)', borderWidth: 1, pointRadius: 0, fill: 'origin', tension: 0 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: {
+          x: { type: 'linear', min: out.grid[0], max: out.grid[out.grid.length - 1], title: { display: true, text: 'Voltage (V)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+          y: { title: { display: true, text: 'Current (mA)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
+        },
+        plugins: { legend: { display: true, labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } } }, tooltip: { enabled: true } }
+      }
+    });
+  }
+
   // ==========================================================================
   // 데이터 라이브러리 연동
   //  - CV 파일을 사이드바 '데이터 라이브러리'에 등록한다(GITT와 동일한 방식).
@@ -532,7 +815,7 @@
         existing.lastConvertedAt = now;
         existing.conversionStatus = 'converted';
         existing.compareEnabled = true;            // 업로드 직후 그래프에 보이도록 체크 상태로
-        existing.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
+        existing.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color, rateData: f.rateData || null };
         if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('CV DB 갱신 실패:', e); }); } catch (e) {} }
       } else {
         var base = f.name ? f.name.replace(/\.[^.]+$/, '') : 'CV';
@@ -549,7 +832,7 @@
         };
         normalizeDataset(ds);                      // ds.lineColor(라이브러리 색) 계산
         if (ds.lineColor) f.color = ds.lineColor;  // 그래프 색을 라이브러리 색으로 통일
-        ds.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color };
+        ds.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color, rateData: f.rateData || null };
         datasetLibrary.push(ds);
         if (typeof saveDatasetToDB === 'function') { try { Promise.resolve(saveDatasetToDB(ds)).catch(function (e) { console.warn('CV DB 저장 실패:', e); }); } catch (e) {} }
       }
@@ -568,7 +851,7 @@
     if (!present && dsRef && dsRef.cvPayload && dsRef.cvPayload.cycles && dsRef.cvPayload.cycles.length) {
       var color = dsRef.lineColor || dsRef.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];  // 라이브러리 색 우선
       var selNum = (dsRef.cvPayload.selNum != null) ? dsRef.cvPayload.selNum : dsRef.cvPayload.cycles[0].num;
-      cvFiles.push({ id: id, name: dsRef.filename || dsRef.dataName, color: color, cycles: dsRef.cvPayload.cycles, selNum: selNum });
+      cvFiles.push({ id: id, name: dsRef.filename || dsRef.dataName, color: color, cycles: dsRef.cvPayload.cycles, selNum: selNum, rateData: dsRef.cvPayload.rateData || null });
       refreshFileList();
     }
     // 클릭 = 보기 → 체크(표시) 상태로 만든다

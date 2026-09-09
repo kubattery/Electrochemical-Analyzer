@@ -148,6 +148,15 @@
         .ds-chip-rate   { background: rgba(16,185,129,0.15); color: #34d399; }
         .ds-chip-cycle  { background: rgba(168,85,247,0.15); color: #c4b5fd; }
 
+        /* ---------- 기준 시료 지정 ---------- */
+        .pristine-row {
+            margin-top: 11px; padding: 11px 12px;
+            background: rgba(6,182,212,0.05);
+            border: 1px solid rgba(6,182,212,0.22); border-radius: 8px;
+        }
+        .pristine-row .field { color: #67e8f9; }
+        .pristine-row .hint { margin-top: 6px; }
+
         /* ---------- 상태 표시 ---------- */
         .status-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
         .spinner {
@@ -252,6 +261,14 @@
                 </select>
             </div>
             <div>
+                <label class="field" for="optFormat">출력 형식</label>
+                <select id="optFormat">
+                    <option value="discussion" selected>디스커션 (Discussion)</option>
+                    <option value="abstract">초록 (Abstract)</option>
+                    <option value="both">초록 + 디스커션</option>
+                </select>
+            </div>
+            <div>
                 <label class="field" for="optSystem">전지 시스템</label>
                 <select id="optSystem">
                     <option value="sib-hardcarbon" selected>Na 이온 / 하드카본 음극</option>
@@ -279,6 +296,11 @@
         </div>
         <div class="ds-list" id="dsList">
             <p style="font-size:12px; color:var(--text-muted);">분석 창에서 데이터를 불러오는 중…</p>
+        </div>
+        <div class="pristine-row" id="pristineRow" style="display:none;">
+            <label class="field" for="optPristine" style="margin:0;">기준 시료 (pristine) — 이 시료 대비 나머지를 &quot;개질재&quot;로 비교합니다</label>
+            <select id="optPristine"></select>
+            <p class="hint" id="pristineHint"></p>
         </div>
         <p class="hint" id="dsHint">선택을 바꾸면 아래 기본 해석이 자동으로 다시 계산됩니다.</p>
     </div>
@@ -363,7 +385,7 @@ const STORAGE_KEY = 'hc_anthropic_api_key';
 
 /* 이 문서의 버전. js/20-ai-report.js 의 AI_REPORT_PAGE_VERSION 과 같아야 한다.
    다르면 브라우저가 옛 문서를 캐시에서 꺼내 쓴 것이므로 사용자에게 알린다. */
-const POPUP_VERSION = '1.3.0';
+const POPUP_VERSION = '1.4.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -539,6 +561,68 @@ function selectedDatasets() {
     return snapshot.datasets.filter(d => selectedIds.has(d.id));
 }
 
+/* ---------------- 기준 시료(pristine) 지정 ----------------
+ * 개질 효과를 논하려면 "무엇 대비"인지가 있어야 한다. 이름으로 자동 추정하되,
+ * 시료명 규칙은 연구실마다 다르므로 최종 판단은 사용자가 드롭다운으로 정한다.
+ * ------------------------------------------------------- */
+let pristineId = null;
+
+const PRISTINE_PATTERNS = [
+    /pristine/i, /bare/i, /raw/i, /ref(erence)?/i, /control/i,
+    /as[-s]?received/i, /untreated/i, /undoped/i, /blank/i, /pure/i,
+    /무처리/, /미처리/, /기준/, /대조/, /순수/, /원료/
+];
+
+/** 이름·시료명으로 pristine 후보를 추정한다. 못 찾으면 null. */
+function guessPristineId(list) {
+    for (const d of list) {
+        const hay = `${d.name || ''} ${d.sample || ''}`;
+        if (PRISTINE_PATTERNS.some(re => re.test(hay))) return d.id;
+    }
+    return null;
+}
+
+function pristineDataset(sel) {
+    return sel.find(d => d.id === pristineId) || null;
+}
+
+function modifiedDatasets(sel) {
+    return sel.filter(d => d.id !== pristineId);
+}
+
+/** 기준 시료 드롭다운을 현재 선택 목록에 맞춰 다시 그린다. */
+function renderPristineSelect(sel) {
+    const row = $('pristineRow');
+    const box = $('optPristine');
+    const hint = $('pristineHint');
+
+    // 시료가 2개 이상일 때만 비교가 성립한다
+    if (sel.length < 2) {
+        row.style.display = 'none';
+        pristineId = null;
+        return;
+    }
+    row.style.display = 'block';
+
+    // 기존 선택이 사라졌으면 다시 추정
+    let guessed = false;
+    if (!pristineId || !sel.some(d => d.id === pristineId)) {
+        pristineId = guessPristineId(sel) || sel[0].id;
+        guessed = true;
+    }
+
+    box.innerHTML = sel.map(d =>
+        `<option value="${escapeHtml(d.id)}"${d.id === pristineId ? ' selected' : ''}>${escapeHtml(d.name)}</option>`
+    ).join('');
+
+    const auto = guessPristineId(sel);
+    hint.innerHTML = auto
+        ? `시료명에서 <b>${escapeHtml(sel.find(d => d.id === auto).name)}</b> 을(를) pristine 으로 추정했습니다. 다르면 바꿔 주세요.`
+        : '시료명으로 pristine 을 특정하지 못해 첫 번째 항목을 기준으로 잡았습니다. <b>반드시 확인해 주세요.</b>';
+
+    if (guessed) { /* 추정값으로 새로 잡은 경우에도 아래 해석이 곧바로 갱신된다 */ }
+}
+
 function renderUnavailable(list) {
     return `<div style="margin-top:9px; padding-top:9px; border-top:1px dashed var(--border-color);">
         <p style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">해석 대상이 아닌 데이터 ${list.length}개</p>
@@ -612,6 +696,7 @@ function renderDatasetList() {
 /** 선택이 바뀔 때: 전송 미리보기 갱신 + 기본 해석 재계산 */
 function refreshAfterSelectionChange() {
     const sel = selectedDatasets();
+    renderPristineSelect(sel);
     updatePayloadView(sel);
 
     const total = (snapshot && snapshot.datasets) ? snapshot.datasets.length : 0;
@@ -669,6 +754,13 @@ $('btnSelNone').addEventListener('click', () => {
 });
 
 $('btnLocal').addEventListener('click', renderLocalReport);
+
+$('optPristine').addEventListener('change', () => {
+    pristineId = $('optPristine').value;
+    renderLocalReport();
+});
+
+$('optFormat').addEventListener('change', renderLocalReport);
 $('btnReload').addEventListener('click', requestSnapshot);
 
 /* ============================================================================
@@ -766,179 +858,267 @@ function nextSteps(sel) {
     return Array.from(s);
 }
 
+/* ── 비교 서술 헬퍼 ─────────────────────────────────────────── */
+
+/** 두 값의 차. 하나라도 숫자가 아니면 null */
+const D = (a, b) => (typeof a === 'number' && typeof b === 'number' && isFinite(a) && isFinite(b)) ? a - b : null;
+
+/** 변화량을 "12.3 %p 증가했다" 형태의 문구로. 유의미하지 않으면 그렇게 말한다. */
+function deltaPhrase(d, unit, thr, conn) {
+    if (d === null) return null;
+    const t = (typeof thr === 'number') ? thr : 1;
+    if (Math.abs(d) < t) {
+        return `사실상 차이가 없었${conn ? '으며' : '다'}(${d >= 0 ? '+' : ''}${d.toFixed(1)} ${unit})`;
+    }
+    return `${Math.abs(d).toFixed(1)} ${unit} ${d > 0 ? '증가' : '감소'}하${conn ? '였으며' : '였다'}`;
+}
+
+/** 변화 폭을 정도부사로 */
+function magWord(d) {
+    const a = Math.abs(d);
+    if (a < 1) return '거의 동일한';
+    if (a < 5) return '소폭의';
+    if (a < 15) return '뚜렷한';
+    return '큰 폭의';
+}
+
+/** 데이터셋에서 비교에 쓰는 값들만 뽑아낸다 */
+function pick(d) {
+    const ip = d.initialPerformance || {};
+    const sp = d.slopePlateau || {};
+    const cl = d.cycleLife || {};
+    const rc = d.rateCapability || [];
+    const last = rc.length ? rc[rc.length - 1] : null;
+    return {
+        name: d.name,
+        ice: ip.ICE_percent,
+        rev: ip.initialChargeCapacity_mAh_g,
+        slope: sp.slopeRatio_percent,
+        plateau: sp.plateauRatio_percent,
+        plateauCap: sp.plateauCapacity_mAh_g,
+        slopeCap: sp.slopeCapacity_mAh_g,
+        rateEnd: last ? last.retention_percent : null,
+        rateName: last ? last.rate : null,
+        life: cl.capacityRetention_percent,
+        ce: cl.averageCoulombicEfficiency_percent,
+        cycles: d.totalCycles
+    };
+}
+
+/** 개질재 1종에 대한 디스커션 문단들 */
+function discussOne(P, M) {
+    const paras = [];
+
+    const dIce = D(M.ice, P.ice);
+    const dRev = D(M.rev, P.rev);
+    const dPla = D(M.plateau, P.plateau);
+    const dRate = D(M.rateEnd, P.rateEnd);
+    const dLife = D(M.life, P.life);
+
+    /* 1문단 — 무엇이 얼마나 달라졌나 */
+    {
+        // 항목이 여러 개면 마지막만 종결형, 앞은 연결형으로 이어 붙인다
+        const items = [];
+        if (dRev !== null) items.push({ pre: `가역 용량은 ${P.rev.toFixed(1)}에서 ${M.rev.toFixed(1)} mAh/g으로`, d: dRev, u: 'mAh/g', t: 3 });
+        if (dIce !== null) items.push({ pre: `초기 쿨롱 효율(ICE)은 ${P.ice.toFixed(1)}%에서 ${M.ice.toFixed(1)}%로`, d: dIce, u: '%p', t: 1 });
+
+        if (items.length) {
+            const body = items
+                .map((it, k) => `${it.pre} ${deltaPhrase(it.d, it.u, it.t, k < items.length - 1)}`)
+                .join(', ');
+            let tail = '';
+            if (dRev !== null && dIce !== null) {
+                if (dRev > 3 && dIce > 1) {
+                    tail = ' 용량과 초기 효율이 함께 개선되었다는 점은, 개질이 활성 저장 사이트를 늘리면서도 비가역 반응을 억제하였음을 시사한다.';
+                } else if (dRev > 3 && dIce < -1) {
+                    tail = ' 용량은 늘었으나 초기 효율이 낮아진 것은, 새로 도입된 저장 사이트가 동시에 전해질 분해 자리로도 작용하였을 가능성을 시사한다. 이 상충 관계는 본 개질의 핵심 논점이다.';
+                } else if (dRev < -3 && dIce > 1) {
+                    tail = ' 용량은 줄었으나 초기 효율이 높아진 것은, 개질이 전해질과 반응하는 표면을 줄이는 대신 저장 사이트의 총량도 함께 감소시켰음을 시사한다.';
+                }
+            }
+            paras.push(`기준 시료(**${P.name}**) 대비 개질 시료(**${M.name}**)에서는 ${body}.${tail}`);
+        }
+    }
+
+    /* 2문단 — 저장 메커니즘(slope/plateau) */
+    if (dPla !== null) {
+        let mech;
+        if (dPla > 5) {
+            mech = `저전압 plateau 영역의 기여가 ${P.plateau.toFixed(1)}%에서 ${M.plateau.toFixed(1)}%로 ${deltaPhrase(dPla, '%p')}. ` +
+                   '이는 개질을 통해 밀폐 나노기공(closed nanopore)이 발달하고, 그 내부에서 Na 클러스터가 형성되는 pore-filling 기여가 커졌음을 의미한다. ' +
+                   '즉 개질의 주된 효과는 표면 흡착 사이트의 증설이 아니라 내부 기공 구조의 재편에 있었던 것으로 해석된다.';
+        } else if (dPla < -5) {
+            mech = `저전압 plateau 기여가 ${P.plateau.toFixed(1)}%에서 ${M.plateau.toFixed(1)}%로 ${deltaPhrase(dPla, '%p')}. ` +
+                   '반대로 고전압 slope 영역의 비중이 커졌다는 뜻이며, 층간 삽입과 결함·엣지 사이트 흡착이 상대적으로 우세해졌음을 시사한다. ' +
+                   '헤테로 원자 도핑이나 표면 결함 도입이 개질의 주된 결과였을 가능성이 높다.';
+        } else {
+            mech = `slope와 plateau의 분율은 ${P.plateau.toFixed(1)}% 대 ${M.plateau.toFixed(1)}%로 ${magWord(dPla)} 수준을 유지하였다. ` +
+                   '개질이 저장 기구의 상대적 비중 자체를 바꾸지는 않았다는 의미로, 성능 변화가 있었다면 그것은 저장 자리의 종류가 아니라 ' +
+                   '접근성·동역학 측면에서 비롯되었을 가능성이 크다.';
+        }
+        paras.push(mech);
+    }
+
+    /* 3문단 — ICE의 의미 */
+    if (dIce !== null && Math.abs(dIce) >= 1) {
+        paras.push(dIce > 0
+            ? `ICE가 ${deltaPhrase(dIce, '%p')}는 점은 첫 사이클 SEI 형성에 소모되는 비가역 용량이 줄었음을 뜻한다. ` +
+              '개질이 전해질과 접촉하는 유효 표면적을 낮추었거나, 표면 작용기를 정리해 분해 반응의 시작점을 줄였을 가능성이 있다. ' +
+              'BET 비표면적과 XPS 표면 조성으로 이 해석을 뒷받침할 수 있다.'
+            : `ICE가 ${deltaPhrase(dIce, '%p')}는 점은 개질 과정에서 전해질에 노출되는 표면이 늘었음을 시사한다. ` +
+              '용량 이득이 초기 손실을 상쇄하는지 따져 볼 필요가 있으며, 상쇄되지 않는다면 후처리 탄화나 표면 코팅으로 ' +
+              '노출 표면을 줄이는 보완이 요구된다. 이 부분은 리뷰어가 가장 먼저 지적할 지점이다.');
+    }
+
+    /* 4문단 — 율속·수명 */
+    {
+        const kin = [];
+        if (dRate !== null && M.rateName) {
+            kin.push(dRate > 2
+                ? `최고 율속(${M.rateName})에서의 용량 유지율이 ${P.rateEnd.toFixed(1)}%에서 ${M.rateEnd.toFixed(1)}%로 올라, 고율에서의 이온 확산 제약이 완화되었다`
+                : (dRate < -2
+                    ? `최고 율속(${M.rateName})에서의 유지율이 ${P.rateEnd.toFixed(1)}%에서 ${M.rateEnd.toFixed(1)}%로 낮아져, 고율 조건에서는 개질이 오히려 불리하게 작용하였다`
+                    : `최고 율속에서의 유지율은 ${M.rateEnd.toFixed(1)}%로 기준 시료와 유사하였다`));
+        }
+        if (dLife !== null) {
+            kin.push(dLife > 2
+                ? `장기 사이클 유지율도 ${P.life.toFixed(1)}%에서 ${M.life.toFixed(1)}%로 개선되어 구조적 안정성이 향상되었음을 보인다`
+                : (dLife < -2
+                    ? `다만 장기 사이클 유지율은 ${P.life.toFixed(1)}%에서 ${M.life.toFixed(1)}%로 낮아져, 반복 삽입·탈리에 대한 구조 안정성은 오히려 저하되었다`
+                    : `장기 사이클 유지율은 ${M.life.toFixed(1)}%로 기준 시료와 대등하였다`));
+        }
+        if (kin.length) {
+            paras.push(kin.join('. ') + '. ' +
+                ((dRate !== null && dRate > 2) || (dLife !== null && dLife > 2)
+                    ? '이러한 동역학적 개선은 앞서 논한 구조 변화가 단순한 용량 증가에 그치지 않고 이온 수송 경로 자체를 개선하였음을 뒷받침한다.'
+                    : '동역학 지표의 변화가 크지 않다는 점은, 개질의 효과가 주로 열역학적 저장 용량 쪽에 국한되었음을 시사한다.'));
+        }
+    }
+
+    return paras;
+}
+
+/** 초록용 한 문단 */
+function abstractPara(P, mods, sysLabel) {
+    const names = mods.map(m => m.name).join(', ');
+    const bits = [];
+    mods.forEach(M => {
+        const dIce = D(M.ice, P.ice), dRev = D(M.rev, P.rev), dPla = D(M.plateau, P.plateau);
+        const seg = [];
+        if (dRev !== null) seg.push(`가역 용량 ${P.rev.toFixed(1)} → ${M.rev.toFixed(1)} mAh/g`);
+        if (dIce !== null) seg.push(`ICE ${P.ice.toFixed(1)} → ${M.ice.toFixed(1)}%`);
+        if (dPla !== null) seg.push(`plateau 분율 ${P.plateau.toFixed(1)} → ${M.plateau.toFixed(1)}%`);
+        if (seg.length) bits.push(`${M.name}에서 ${seg.join(', ')}`);
+    });
+
+    const best = mods.reduce((a, b) => {
+        const ra = (D(b.rev, P.rev) || 0), rb = (D(a.rev, P.rev) || 0);
+        return ra > rb ? b : a;
+    }, mods[0]);
+    const dPlaBest = D(best.plateau, P.plateau);
+
+    return `본 연구에서는 ${sysLabel} 조건에서 기준 시료(${P.name})와 개질 시료(${names})의 전기화학적 거동을 비교하였다. ` +
+        `정전류 충방전 분석 결과, ${bits.join('; ')}의 변화가 관찰되었다. ` +
+        (dPlaBest !== null && dPlaBest > 5
+            ? `특히 저전압 plateau 영역의 기여가 확대된 점은 개질을 통해 밀폐 나노기공이 발달하고 해당 기공 내 Na 클러스터 형성이 활성화되었음을 시사한다. `
+            : (dPlaBest !== null && dPlaBest < -5
+                ? `특히 고전압 slope 영역의 기여가 확대된 점은 개질이 결함 및 엣지 사이트 기반의 흡착 저장을 강화하였음을 시사한다. `
+                : `저장 기구의 상대적 분율은 크게 변하지 않아, 성능 차이는 저장 자리의 종류보다 그 접근성에서 비롯된 것으로 판단된다. `)) +
+        `이러한 결과는 ${best.name}의 개질 전략이 하드카본 음극의 저장 용량과 초기 가역성을 조절하는 유효한 수단임을 보여준다.`;
+}
+
+/**
+ * 규칙 기반 기본 해석.
+ * 표를 만들지 않는다 — 논문 초록/디스커션에 그대로 옮겨 쓸 수 있는 서술문으로 낸다.
+ * 기준 시료(pristine)가 지정되어 있으면 그것 대비 개질재를 비교하는 형식으로 쓴다.
+ */
 function buildLocalReport(sel, settings) {
+    const fmt = ($('optFormat') && $('optFormat').value) || 'discussion';
+    const sysVal = ($('optSystem') && $('optSystem').value) || 'sib-hardcarbon';
+    const sysLabel = sysVal === 'lib-graphite' ? 'Li 이온 전지용 탄소계 음극(vs. Li/Li⁺)'
+                   : (sysVal === 'generic' ? '반쪽전지' : 'Na 이온 전지용 하드카본 음극(vs. Na/Na⁺)');
+
     const L = [];
     L.push('## 기본 해석 (규칙 기반)');
     L.push('');
-    L.push('*이 창 안에서 계산된 결과입니다. 외부로 전송된 데이터는 없고 비용도 들지 않습니다. ' +
-           '판정 기준은 명세서의 ICE 등급표와 분율별 메커니즘표를 그대로 따릅니다. ' +
-           '정해진 규칙만 적용하므로, 합성 조건을 반영한 서술이나 논문 문장 초안이 필요하면 아래 **AI 심층 해석**을 사용하세요.*');
+    L.push('*이 창 안에서 계산된 결과입니다. 외부로 전송된 데이터는 없습니다. ' +
+           '정해진 규칙으로 쓰인 초안이므로, 합성 조건을 반영한 서술이나 문장 다듬기는 아래 **AI 심층 해석**을 쓰십시오.*');
     L.push('');
 
-    // 분석 설정
-    if (settings) {
-        L.push(`**분석 설정** — Plateau 분리 전압 ${settings.plateauCutoffVoltage_V} V · ` +
-               `Slope/Plateau 대상 ${settings.slopePlateauTargetCycle} 사이클 · ` +
-               `율속 단계당 ${settings.rateStepSize_cyclesPerStep} 사이클 · ` +
-               `용량 기준 ${settings.rateCapacityBasis === 'charge' ? '충전(탈소듐화)' : '방전(소듐화)'}`);
-        L.push('');
-    }
-
-    // 신뢰성 점검
+    // 이상값이 있으면 해석보다 먼저 알린다
     const warnings = [];
     sel.forEach(d => sanityChecks(d).forEach(w => warnings.push(`- (${d.name}) ${w}`)));
-    L.push('### 데이터 신뢰성 점검');
-    if (warnings.length === 0) {
-        L.push('특이사항 없음 — 수치가 물리적으로 타당한 범위에 있습니다.');
-    } else {
-        L.push('아래 항목은 해석보다 먼저 확인하셔야 합니다. 값이 잘못되면 이후 해석 전체가 무의미해집니다.');
+    if (warnings.length) {
+        L.push('### 먼저 확인이 필요한 값');
+        L.push('아래 수치는 물리적으로 이례적입니다. 이 값이 잘못되면 아래 해석은 성립하지 않습니다.');
         L.push('');
         warnings.forEach(w => L.push(w));
+        L.push('');
     }
-    L.push('');
 
-    // 데이터셋별
-    sel.forEach(d => {
-        L.push('---');
+    const pris = pristineDataset(sel);
+    const mods = modifiedDatasets(sel);
+
+    if (!pris || mods.length === 0) {
+        // 비교 대상이 없으면 단일 시료 서술만 가능
+        const d = sel[0];
+        const S = pick(d);
+        L.push('### 단일 시료 서술');
         L.push('');
-        L.push(`### ${d.name}`);
-        const head = [];
-        if (d.sample && d.sample !== '(샘플 미지정)') head.push(`시료 ${d.sample}`);
-        head.push(`${d.totalCycles} 사이클`);
-        if (d.cycleRange) head.push(`${d.cycleRange[0]}~${d.cycleRange[1]}번`);
-        if (d.experimentKindAutoDetected) {
-            head.push(d.experimentKindAutoDetected === 'rate' ? '율속 시험으로 자동 판별' : '장기 수명 시험으로 자동 판별');
-        }
-        L.push(head.join(' · '));
-        if (d.autoDetectionReason) { L.push(''); L.push(`*판별 근거: ${d.autoDetectionReason}*`); }
+        const seg = [];
+        if (typeof S.rev === 'number') seg.push(`초기 가역 용량은 ${S.rev.toFixed(1)} mAh/g`);
+        if (typeof S.ice === 'number') seg.push(`초기 쿨롱 효율은 ${S.ice.toFixed(1)}%`);
+        if (typeof S.plateau === 'number') seg.push(`저전압 plateau 영역의 기여는 전체 용량의 ${S.plateau.toFixed(1)}%`);
+        L.push(`${sysLabel} 조건에서 측정한 **${S.name}**의 ${seg.join('이고, ')}로 나타났다.`);
         L.push('');
+        const m = mechanismFromRatios(S.slope, S.plateau);
+        if (m) { L.push(m.detail + ' ' + m.discussion); L.push(''); }
+        const g = iceGrade(S.ice);
+        if (g) { L.push(`초기 효율은 하드카본 문헌 기준 **${g.grade}** 수준이다. ${g.note}`); L.push(''); }
+        L.push('> 개질 효과를 논하려면 비교 대상이 필요합니다. 위에서 **데이터셋을 2개 이상 선택**하고 ' +
+               '기준 시료(pristine)를 지정하면, pristine 대비 개질재를 비교하는 초록·디스커션 초안이 생성됩니다.');
+        L.push('');
+    } else {
+        const P = pick(pris);
+        const Ms = mods.map(pick);
 
-        // 초기 성능
-        const ip = d.initialPerformance;
-        if (ip) {
-            L.push('**초기 성능 및 ICE**');
+        if (fmt === 'abstract' || fmt === 'both') {
+            L.push('### 초록 (Abstract) 초안');
             L.push('');
-            L.push('| 항목 | 값 |');
-            L.push('| :--- | ---: |');
-            L.push(`| 초기 소듐화(방전) 용량 | ${N(ip.initialDischargeCapacity_mAh_g)} mAh/g |`);
-            L.push(`| 초기 탈소듐화(충전) 용량 | ${N(ip.initialChargeCapacity_mAh_g)} mAh/g |`);
-            L.push(`| 초기 가역 효율 (ICE) | ${N(ip.ICE_percent)} % |`);
+            L.push(abstractPara(P, Ms, sysLabel));
             L.push('');
-            const g = iceGrade(ip.ICE_percent);
-            if (g) {
-                const loss = (typeof ip.initialDischargeCapacity_mAh_g === 'number' && typeof ip.initialChargeCapacity_mAh_g === 'number')
-                    ? ip.initialDischargeCapacity_mAh_g - ip.initialChargeCapacity_mAh_g : null;
-                L.push(`판정: **${g.grade}**. ${g.note}` +
-                    (loss !== null ? ` 첫 사이클에서 ${N(loss)} mAh/g이 비가역적으로 소실되었습니다.` : ''));
-                L.push('');
-            }
         }
 
-        // Slope / Plateau
-        const sp = d.slopePlateau;
-        if (sp) {
-            L.push(`**Slope / Plateau 분리** (${sp.cycle} 사이클, 분리 전압 ${sp.cutoffVoltage_V} V)`);
+        if (fmt === 'discussion' || fmt === 'both') {
+            L.push('### 디스커션 (Discussion) 초안');
             L.push('');
-            L.push('| 영역 | 용량 (mAh/g) | 분율 (%) |');
-            L.push('| :--- | ---: | ---: |');
-            L.push(`| Slope (> ${sp.cutoffVoltage_V} V) | ${N(sp.slopeCapacity_mAh_g)} | ${N(sp.slopeRatio_percent)} |`);
-            L.push(`| Plateau (≤ ${sp.cutoffVoltage_V} V) | ${N(sp.plateauCapacity_mAh_g)} | ${N(sp.plateauRatio_percent)} |`);
-            L.push(`| 합계 | ${N(sp.totalCapacity_mAh_g)} | 100.0 |`);
-            L.push('');
-            const m = mechanismFromRatios(sp.slopeRatio_percent, sp.plateauRatio_percent);
-            if (m) {
-                L.push(`추정 메커니즘: **${m.label}**`);
-                L.push('');
-                L.push(m.detail);
-                L.push('');
-                L.push(`> 디스커션 방향 — ${m.discussion}`);
-                L.push('');
-            }
-        }
-
-        // 율속
-        if (d.rateCapability && d.rateCapability.length > 1) {
-            L.push('**율속 특성 (Rate Capability)**');
-            L.push('');
-            L.push('| 단계 | 사이클 | 평균 용량 (mAh/g) | 유지율 (%) | 평균 CE (%) |');
-            L.push('| :--- | :--- | ---: | ---: | ---: |');
-            d.rateCapability.forEach(s => {
-                L.push(`| ${s.rate} | ${s.cycleRange} | ${N(s.averageCapacity_mAh_g)} | ${N(s.retention_percent)} | ${N(s.averageCoulombicEfficiency_percent)} |`);
+            Ms.forEach(M => {
+                if (Ms.length > 1) { L.push(`**${M.name}**`); L.push(''); }
+                discussOne(P, M).forEach(p => { L.push(p); L.push(''); });
             });
-            L.push('');
-            const fin = d.rateCapability[d.rateCapability.length - 1];
-            const first = d.rateCapability[0];
-            L.push(`최종 단계(${fin.rate}) 유지율 **${N(fin.retention_percent)}%**. ` +
-                (fin.retention_percent >= 80
-                    ? '80% 이상으로 동역학적 특성이 양호합니다. 이온 확산 경로가 잘 확보된 구조로 볼 수 있습니다.'
-                    : '80%에 미달합니다. 고율에서 이온 확산이 제한되고 있을 가능성이 있어, GITT·EIS로 원인(고체 내 확산 vs 계면 저항)을 분리해 볼 필요가 있습니다.'));
-            L.push('');
-            L.push(`기준 단계(${first.rate}) 평균 용량은 ${N(first.averageCapacity_mAh_g)} mAh/g입니다.`);
-            L.push('');
-        }
 
-        // 수명
-        const cl = d.cycleLife;
-        if (cl && d.totalCycles > 1) {
-            L.push('**사이클 수명**');
-            L.push('');
-            L.push(`${cl.firstCycle}번 ${N(cl.firstCapacity_mAh_g)} mAh/g → ${cl.lastCycle}번 ${N(cl.lastCapacity_mAh_g)} mAh/g ` +
-                   `(유지율 **${N(cl.capacityRetention_percent)}%**)`);
-            if (typeof cl.averageCoulombicEfficiency_percent === 'number') {
-                L.push('');
-                L.push(`전 구간 평균 쿨롱 효율 ${N(cl.averageCoulombicEfficiency_percent, 2)}%. ` +
-                    (cl.averageCoulombicEfficiency_percent >= 99.5
-                        ? '99.5% 이상으로 가역성이 우수합니다.'
-                        : '99.5% 미만이므로 부반응이 지속되고 있을 가능성이 있습니다.'));
+            // 여러 개질재를 함께 본 경우의 종합
+            if (Ms.length > 1) {
+                const byRev = Ms.filter(m => typeof m.rev === 'number');
+                if (byRev.length > 1) {
+                    const top = byRev.reduce((a, b) => (b.rev > a.rev ? b : a));
+                    L.push(`세 시료를 함께 놓고 보면 가역 용량 기준으로는 **${top.name}**가 가장 우수하였다. ` +
+                           '다만 용량만으로 개질 전략의 우열을 단정하기는 이르며, 초기 효율과 고율 유지율을 함께 고려한 ' +
+                           '종합 판단이 필요하다. 각 개질 조건이 기공 구조와 표면 화학에 미친 영향을 분리해 보이려면 ' +
+                           '동일 시료에 대한 기공 분석과 표면 분석이 병행되어야 한다.');
+                    L.push('');
+                }
             }
-            L.push('');
-        }
-    });
 
-    // 비교
-    if (sel.length > 1) {
-        L.push('---');
-        L.push('');
-        L.push('### 시료 간 비교');
-        L.push('');
-        L.push('| 데이터셋 | ICE (%) | Slope 분율 (%) | Plateau 분율 (%) | 가역 용량 (mAh/g) | 최종 율속 유지율 (%) |');
-        L.push('| :--- | ---: | ---: | ---: | ---: | ---: |');
-        sel.forEach(d => {
-            const ip = d.initialPerformance, sp = d.slopePlateau;
-            const fin = (d.rateCapability && d.rateCapability.length)
-                ? d.rateCapability[d.rateCapability.length - 1].retention_percent : null;
-            L.push(`| ${d.name} | ${N(ip && ip.ICE_percent)} | ${N(sp && sp.slopeRatio_percent)} | ` +
-                   `${N(sp && sp.plateauRatio_percent)} | ${N(ip && ip.initialChargeCapacity_mAh_g)} | ${N(fin)} |`);
-        });
-        L.push('');
-
-        const withIce = sel.filter(d => d.initialPerformance && typeof d.initialPerformance.ICE_percent === 'number');
-        if (withIce.length > 1) {
-            const best = withIce.reduce((a, b) => b.initialPerformance.ICE_percent > a.initialPerformance.ICE_percent ? b : a);
-            const worst = withIce.reduce((a, b) => b.initialPerformance.ICE_percent < a.initialPerformance.ICE_percent ? b : a);
-            L.push(`ICE는 **${best.name}**이 ${N(best.initialPerformance.ICE_percent)}%로 가장 높고, ` +
-                   `**${worst.name}**이 ${N(worst.initialPerformance.ICE_percent)}%로 가장 낮습니다 ` +
-                   `(차이 ${N(best.initialPerformance.ICE_percent - worst.initialPerformance.ICE_percent)} %p).`);
-            L.push('');
-        }
-        const withPl = sel.filter(d => d.slopePlateau && typeof d.slopePlateau.plateauRatio_percent === 'number');
-        if (withPl.length > 1) {
-            const hi = withPl.reduce((a, b) => b.slopePlateau.plateauRatio_percent > a.slopePlateau.plateauRatio_percent ? b : a);
-            const lo = withPl.reduce((a, b) => b.slopePlateau.plateauRatio_percent < a.slopePlateau.plateauRatio_percent ? b : a);
-            L.push(`Plateau 분율은 **${hi.name}**이 ${N(hi.slopePlateau.plateauRatio_percent)}%로 최대, ` +
-                   `**${lo.name}**이 ${N(lo.slopePlateau.plateauRatio_percent)}%로 최소입니다. ` +
-                   '이 차이가 개질(열처리 온도·전구체·도핑)에 의한 폐쇄 기공 발달 정도의 차이인지, ' +
-                   '기공 분석 데이터로 확인하시는 것이 개질 효과 논증의 핵심이 됩니다.');
+            L.push('본 연구의 전기화학 데이터만으로는 위 해석 중 구조에 관한 부분이 추정에 머문다. ' +
+                   '따라서 아래 분석을 통해 구조적 근거를 직접 제시하는 것이 논지 강화에 필요하다.');
             L.push('');
         }
     }
 
-    // 다음 단계
     const steps = nextSteps(sel);
     if (steps.length) {
-        L.push('---');
-        L.push('');
-        L.push('### 다음에 확보하면 좋은 데이터');
+        L.push('### 논지 보강에 필요한 추가 분석');
         L.push('');
         steps.forEach(s => L.push(`- ${s}`));
         L.push('');
@@ -946,8 +1126,8 @@ function buildLocalReport(sel, settings) {
 
     L.push('---');
     L.push('');
-    L.push('*규칙 기반 판정이므로 전문가의 판단을 대체하지 않습니다. 합성 조건을 반영한 해석, ' +
-           '리뷰어 지적 대응, 논문에 넣을 영문 문장 초안이 필요하면 API 키를 넣고 AI 심층 해석을 실행하세요.*');
+    L.push('*규칙 기반으로 생성된 초안이므로 전문가 검토 없이 그대로 투고하지 마십시오. ' +
+           '수치는 화면의 분석 결과에서 그대로 가져온 값입니다.*');
 
     return L.join('\n');
 }
@@ -985,42 +1165,50 @@ const SYSTEM_BASE = `당신은 이차전지 음극 소재를 20년간 연구해 
 · Plateau 분율이 0% 또는 100% → 분리 전압(cutoff)이 곡선 범위를 벗어났을 가능성
 · 율속 단계 수와 사이클 수가 맞지 않음 → 단계당 사이클 수(step size) 설정 확인 필요`;
 
-const OUTPUT_SPEC_KO = `[출력 형식] 마크다운으로 다음 구조를 지키십시오.
+/* ---------------- 출력 형식 지시 ----------------
+ * 표를 만들지 말 것. 논문 원고에 그대로 옮길 수 있는 서술문만 낸다.
+ * 기준 시료(pristine)가 지정된 경우 그 대비 개질 효과를 논하는 형식으로 쓴다.
+ * ---------------------------------------------- */
+function outputSpec(lang, fmt, cmp) {
+    const NLJ = String.fromCharCode(10);
+    const out = [];
 
-## 1. 한 줄 요약
-이 소재가 어떤 소재인지 한 문장.
+    if (lang === 'en') {
+        out.push('[Output format] Markdown. Absolutely no tables anywhere in the output.', '');
+        if (fmt === 'abstract' || fmt === 'both') {
+            out.push('## Abstract (draft)');
+            out.push('One self-contained paragraph of 150-250 words: what was compared, the key quantitative changes, the inferred structural origin, and the significance. No sub-headings, no lists.', '');
+        }
+        if (fmt === 'discussion' || fmt === 'both') {
+            out.push('## Discussion (draft)');
+            out.push('Four to six flowing paragraphs of manuscript-ready prose. No bullet lists inside this section. Each paragraph takes one point and moves from number to interpretation to implication.', '');
+        }
+        out.push('## Limitations and what the data cannot yet prove');
+        out.push('State plainly which claims are inference rather than measurement, and how a reviewer might challenge them.', '');
+        out.push('## Further analyses needed');
+        out.push('A short bulleted list. This section is guidance for the authors, not manuscript text.', '');
+        if (cmp) out.push('Frame everything as a comparison against the designated pristine sample: what the modification changed and why. Attribute every performance difference to a specific structural or chemical cause, and mark inference as inference.', '');
+        out.push('Quote the provided numbers exactly; never invent or re-round them. Use the impersonal past tense of journal articles.');
+        return out.join(NLJ);
+    }
 
-## 2. 데이터 신뢰성 점검
-이상 없으면 "특이사항 없음"으로 한 줄. 의심되는 값이 있으면 무엇을 확인해야 하는지 구체적으로.
-
-## 3. 수치 해석
-제공된 지표를 항목별로 해석. 각 수치가 무엇을 의미하는지, 하드카본 문헌 기준 어느 수준인지.
-
-## 4. 추정 저장 메커니즘
-Slope/Plateau 분율과 곡선 형태로부터 추론되는 Na 저장 메커니즘. 확정과 추정을 반드시 구분할 것.
-
-## 5. 논문 디스커션 초안
-그대로 원고에 옮겨 다듬어 쓸 수 있는 수준의 문단. 한국어 설명 뒤에 대응하는 **영문 문장**을 함께 제시할 것.
-
-## 6. 예상되는 리뷰어 지적과 대응
-2~4개.
-
-## 7. 다음에 필요한 실험·분석
-우선순위 순으로. 각 항목마다 "무엇을 확인하기 위한 것인지"를 한 줄로.
-
-전문 용어는 한국어(영문) 병기. 수치를 인용할 때는 반드시 제공된 값을 그대로 사용하고 임의로 반올림하지 마십시오.`;
-
-const OUTPUT_SPEC_EN = `[Output format] Use markdown with this structure:
-
-## 1. One-line summary
-## 2. Data sanity check
-## 3. Quantitative interpretation
-## 4. Inferred storage mechanism
-## 5. Draft discussion for the manuscript
-## 6. Anticipated reviewer criticisms and responses
-## 7. Recommended follow-up experiments
-
-Write publication-quality English suitable for a top-tier journal. Cite the provided numbers exactly as given; do not re-round them. Clearly separate what the data establishes from what it merely suggests.`;
+    out.push('[출력 형식] 마크다운. 출력 어디에도 표를 만들지 마십시오.', '');
+    if (fmt === 'abstract' || fmt === 'both') {
+        out.push('## 초록 (Abstract) 초안');
+        out.push('한 문단(공백 포함 400~600자)으로 완결하십시오. 무엇을 비교했는지, 핵심 수치 변화, 그로부터 추론되는 구조적 원인, 그 의의를 이 순서로 담으십시오. 소제목·목록·표를 쓰지 마십시오.', '');
+    }
+    if (fmt === 'discussion' || fmt === 'both') {
+        out.push('## 디스커션 (Discussion) 초안');
+        out.push('원고에 그대로 옮겨 다듬을 수 있는 수준의 문단 4~6개. 이 절 안에서는 목록이나 표를 쓰지 말고 이어지는 산문으로만 쓰십시오. 각 문단은 하나의 논점을 다루고 수치에서 해석, 함의 순으로 전개하십시오.', '');
+    }
+    out.push('## 이 데이터로 아직 말할 수 없는 것');
+    out.push('어떤 주장이 측정이 아니라 추론인지 분명히 밝히십시오. 리뷰어가 지적할 지점을 미리 짚고 어떻게 방어할지 함께 쓰십시오.', '');
+    out.push('## 논지 보강에 필요한 추가 분석');
+    out.push('짧은 목록으로. 이 절은 원고 본문이 아니라 저자를 위한 안내입니다. 각 항목은 무엇을 확인하기 위한 것인지 한 줄로 밝히십시오.', '');
+    if (cmp) out.push('모든 서술을 지정된 기준 시료(pristine) 대비 비교로 구성하십시오. 개질이 무엇을 바꾸었고 왜 그런지를 논하되, 성능 차이는 반드시 구조적·화학적 원인에 귀속시키고 확정과 추정을 구분하십시오.', '');
+    out.push('전문 용어는 한국어(영문) 병기. 제공된 수치는 그대로 인용하고 임의로 반올림하지 마십시오. 논문체로 쓰십시오.');
+    return out.join(NLJ);
+}
 
 const SYSTEM_NOTES = {
     'sib-hardcarbon': '이 데이터는 Na 이온 전지용 하드카본 음극 반쪽전지(vs. Na/Na+) 측정으로 간주하십시오.',
@@ -1049,12 +1237,21 @@ function buildUserMessage() {
         parts.push('');
     }
 
-    parts.push(lang === 'en' ? OUTPUT_SPEC_EN : OUTPUT_SPEC_KO);
+    const fmt = $('optFormat').value;
+    const sel = selectedDatasets();
+    const pris = pristineDataset(sel);
+    const cmp = !!(pris && sel.length > 1);
 
-    if (selectedDatasets().length > 1) {
+    if (cmp) {
+        parts.push(`[시료 구성] 기준 시료(pristine)는 "${pris.name}" 입니다. 나머지 ${sel.length - 1}개는 개질 시료로 간주하고, ` +
+            '기준 시료 대비 각 개질 시료에서 무엇이 어떻게 달라졌는지를 중심으로 서술하십시오.');
         parts.push('');
-        parts.push('데이터셋이 여러 개이므로, 각각을 개별 해석한 뒤 마지막에 시료 간 비교와 개질 효과에 대한 결론을 반드시 추가하십시오.');
+    } else if (sel.length > 1) {
+        parts.push('[시료 구성] 기준 시료가 지정되지 않았습니다. 어느 것이 대조군인지 데이터로부터 추정하고, 그 가정을 첫머리에 명시한 뒤 서술하십시오.');
+        parts.push('');
     }
+
+    parts.push(outputSpec(lang, fmt, cmp));
 
     return parts.join('\n');
 }

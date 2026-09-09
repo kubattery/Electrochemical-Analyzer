@@ -27,7 +27,7 @@ let _aiReportWin = null;
  * 팝업은 메인 페이지와 별개 문서이므로, 메인 창에서 Ctrl+Shift+R 을 눌러도
  * 팝업의 캐시는 갱신되지 않는다. 이 쿼리 문자열이 유일한 갱신 수단이다.
  */
-const AI_REPORT_PAGE_VERSION = '1.4.0';
+const AI_REPORT_PAGE_VERSION = '1.5.0';
 
 /**
  * postMessage 대상 오리진.

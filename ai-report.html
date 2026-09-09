@@ -148,14 +148,64 @@
         .ds-chip-rate   { background: rgba(16,185,129,0.15); color: #34d399; }
         .ds-chip-cycle  { background: rgba(168,85,247,0.15); color: #c4b5fd; }
 
-        /* ---------- 기준 시료 지정 ---------- */
-        .pristine-row {
+        /* ---------- 시료 역할 지정 ---------- */
+        .role-box {
             margin-top: 11px; padding: 11px 12px;
             background: rgba(6,182,212,0.05);
             border: 1px solid rgba(6,182,212,0.22); border-radius: 8px;
         }
-        .pristine-row .field { color: #67e8f9; }
-        .pristine-row .hint { margin-top: 6px; }
+        .role-head {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px; font-weight: 600; color: #67e8f9; margin-bottom: 9px;
+        }
+        .role-head .material-icons-round { font-size: 15px; }
+        .role-item {
+            display: flex; align-items: center; gap: 9px;
+            padding: 7px 9px; border-radius: 6px;
+            border: 1px solid transparent;
+        }
+        .role-item + .role-item { margin-top: 4px; }
+        .role-item:hover { background: rgba(255,255,255,0.03); }
+        .role-item input[type=radio] { width: 14px; height: 14px; accent-color: var(--color-cyan); cursor: pointer; flex: 0 0 auto; }
+        .role-item .rn { font-size: 12px; font-weight: 600; color: #fff; flex: 1 1 auto; min-width: 0; }
+        .role-tag {
+            font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; flex: 0 0 auto;
+        }
+        .role-tag.base { background: rgba(6,182,212,0.18); color: #67e8f9; }
+        .role-tag.mod  { background: rgba(168,85,247,0.16); color: #c4b5fd; }
+        .role-info {
+            font-size: 10px; color: var(--text-muted); flex: 0 0 auto;
+            max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .role-info.filled { color: #34d399; }
+
+        /* ---------- 개질 정보 대화창 ---------- */
+        .chat-box {
+            margin-top: 11px; padding: 11px 12px;
+            background: rgba(168,85,247,0.05);
+            border: 1px solid rgba(168,85,247,0.25); border-radius: 8px;
+        }
+        .chat-head {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px; color: #c4b5fd; margin-bottom: 9px;
+        }
+        .chat-head .material-icons-round { font-size: 15px; vertical-align: -3px; margin-right: 4px; }
+        .chat-log {
+            max-height: 260px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 7px; margin-bottom: 9px;
+        }
+        .chat-msg { font-size: 12px; line-height: 1.65; padding: 8px 11px; border-radius: 9px; max-width: 88%; }
+        .chat-msg.q { background: rgba(255,255,255,0.05); color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 3px; }
+        .chat-msg.a { background: rgba(59,130,246,0.18); color: #dbeafe; align-self: flex-end; border-bottom-right-radius: 3px; }
+        .chat-msg.done { background: rgba(16,185,129,0.12); color: #6ee7b7; align-self: stretch; max-width: 100%; }
+        .chat-input { display: flex; gap: 7px; }
+        .chat-input input {
+            flex: 1 1 auto; background: var(--bg-input); border: 1px solid var(--border-color);
+            border-radius: 7px; padding: 9px 11px; color: var(--text-main);
+            font-size: 12.5px; font-family: inherit; outline: none;
+        }
+        .chat-input input:focus { border-color: rgba(168,85,247,0.5); }
+        .chat-actions { display: flex; gap: 7px; margin-top: 7px; }
 
         /* ---------- 상태 표시 ---------- */
         .status-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
@@ -297,10 +347,35 @@
         <div class="ds-list" id="dsList">
             <p style="font-size:12px; color:var(--text-muted);">분석 창에서 데이터를 불러오는 중…</p>
         </div>
-        <div class="pristine-row" id="pristineRow" style="display:none;">
-            <label class="field" for="optPristine" style="margin:0;">기준 시료 (pristine) — 이 시료 대비 나머지를 &quot;개질재&quot;로 비교합니다</label>
-            <select id="optPristine"></select>
-            <p class="hint" id="pristineHint"></p>
+        <div class="role-box" id="roleBox" style="display:none;">
+            <div class="role-head">
+                <span class="material-icons-round">science</span>
+                시료 역할 지정 — 기준(pristine) 하나를 고르면 나머지는 개질 시료가 됩니다
+            </div>
+            <div id="roleList"></div>
+            <p class="hint" id="roleHint"></p>
+        </div>
+
+        <!-- 개질 정보 입력 대화창 -->
+        <div class="chat-box" id="chatBox" style="display:none;">
+            <div class="chat-head">
+                <span>
+                    <span class="material-icons-round">forum</span>
+                    <b id="chatTitle">개질 정보 입력</b>
+                </span>
+                <button class="btn-ghost" id="btnChatClose" type="button" style="padding:4px 10px; font-size:12px;">닫기</button>
+            </div>
+            <div class="chat-log" id="chatLog"></div>
+            <div class="chat-input">
+                <input type="text" id="chatInput" placeholder="답변을 입력하고 Enter — 해당 없으면 '없음'이라고 적어 주세요" autocomplete="off">
+                <button class="btn-primary" id="btnChatSend" type="button" style="padding:8px 14px;">
+                    <span class="material-icons-round">send</span>
+                </button>
+            </div>
+            <div class="chat-actions">
+                <button class="btn-ghost" id="btnChatSkip" type="button" style="padding:4px 10px; font-size:12px;">이 질문 건너뛰기</button>
+                <button class="btn-ghost" id="btnChatReset" type="button" style="padding:4px 10px; font-size:12px;">이 시료 정보 지우기</button>
+            </div>
         </div>
         <p class="hint" id="dsHint">선택을 바꾸면 아래 기본 해석이 자동으로 다시 계산됩니다.</p>
     </div>
@@ -385,7 +460,7 @@ const STORAGE_KEY = 'hc_anthropic_api_key';
 
 /* 이 문서의 버전. js/20-ai-report.js 의 AI_REPORT_PAGE_VERSION 과 같아야 한다.
    다르면 브라우저가 옛 문서를 캐시에서 꺼내 쓴 것이므로 사용자에게 알린다. */
-const POPUP_VERSION = '1.4.0';
+const POPUP_VERSION = '1.5.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -590,39 +665,6 @@ function modifiedDatasets(sel) {
     return sel.filter(d => d.id !== pristineId);
 }
 
-/** 기준 시료 드롭다운을 현재 선택 목록에 맞춰 다시 그린다. */
-function renderPristineSelect(sel) {
-    const row = $('pristineRow');
-    const box = $('optPristine');
-    const hint = $('pristineHint');
-
-    // 시료가 2개 이상일 때만 비교가 성립한다
-    if (sel.length < 2) {
-        row.style.display = 'none';
-        pristineId = null;
-        return;
-    }
-    row.style.display = 'block';
-
-    // 기존 선택이 사라졌으면 다시 추정
-    let guessed = false;
-    if (!pristineId || !sel.some(d => d.id === pristineId)) {
-        pristineId = guessPristineId(sel) || sel[0].id;
-        guessed = true;
-    }
-
-    box.innerHTML = sel.map(d =>
-        `<option value="${escapeHtml(d.id)}"${d.id === pristineId ? ' selected' : ''}>${escapeHtml(d.name)}</option>`
-    ).join('');
-
-    const auto = guessPristineId(sel);
-    hint.innerHTML = auto
-        ? `시료명에서 <b>${escapeHtml(sel.find(d => d.id === auto).name)}</b> 을(를) pristine 으로 추정했습니다. 다르면 바꿔 주세요.`
-        : '시료명으로 pristine 을 특정하지 못해 첫 번째 항목을 기준으로 잡았습니다. <b>반드시 확인해 주세요.</b>';
-
-    if (guessed) { /* 추정값으로 새로 잡은 경우에도 아래 해석이 곧바로 갱신된다 */ }
-}
-
 function renderUnavailable(list) {
     return `<div style="margin-top:9px; padding-top:9px; border-top:1px dashed var(--border-color);">
         <p style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">해석 대상이 아닌 데이터 ${list.length}개</p>
@@ -693,10 +735,200 @@ function renderDatasetList() {
     });
 }
 
+/* ---------------- 개질 정보 (대화형 입력) ----------------
+ * 전기화학 수치만으로는 "왜 그런 결과가 나왔는지"를 말할 수 없다.
+ * 어떤 도핑·코팅·열처리를 했는지 알아야 성능 변화를 원인에 귀속시킬 수 있다.
+ * 한 번에 긴 서식을 받으면 잘 안 쓰게 되므로 한 문항씩 대화로 받는다.
+ * ------------------------------------------------------- */
+const TREATMENT_QUESTIONS = [
+    { key: 'kind',      q: '어떤 개질을 하셨나요? (예: N 도핑, 탄소 코팅, 고온 열처리, 산 처리)' },
+    { key: 'precursor', q: '사용한 전구체·원료와 함량을 알려 주세요. (예: 멜라민 10 wt%, 글루코스 전구체)' },
+    { key: 'process',   q: '열처리·공정 조건은 어떻게 되나요? (온도 / 시간 / 분위기, 예: 1500도 2h Ar)' },
+    { key: 'evidence',  q: '이미 확보한 구조 분석 결과가 있나요? (BET 비표면적, XRD d002, 라만 ID/IG, NLDFT 기공 분포 등)' },
+    { key: 'extra',     q: '그 밖에 해석에 반영했으면 하는 내용이 있으면 적어 주세요. (없으면 "없음")' }
+];
+
+const TREATMENT_STORE_KEY = 'hc_ai_treatments';
+
+let treatments = {};
+let chatTargetId = null;
+
+function loadTreatments() {
+    try {
+        const raw = localStorage.getItem(TREATMENT_STORE_KEY);
+        treatments = raw ? JSON.parse(raw) : {};
+    } catch (e) { treatments = {}; }
+}
+
+function saveTreatments() {
+    try { localStorage.setItem(TREATMENT_STORE_KEY, JSON.stringify(treatments)); } catch (e) { /* 무시 */ }
+}
+
+function treatmentOf(id) {
+    if (!treatments[id]) treatments[id] = { answers: {} };
+    if (!treatments[id].answers) treatments[id].answers = {};
+    return treatments[id];
+}
+
+function treatmentCount(id) {
+    const t = treatments[id];
+    if (!t || !t.answers) return 0;
+    return TREATMENT_QUESTIONS.filter(x => (t.answers[x.key] || '').trim()).length;
+}
+
+function nextQuestionIndex(id) {
+    const t = treatmentOf(id);
+    for (let i = 0; i < TREATMENT_QUESTIONS.length; i++) {
+        if (!(t.answers[TREATMENT_QUESTIONS[i].key] || '').trim()) return i;
+    }
+    return -1;
+}
+
+function treatmentBrief(id) {
+    const t = treatments[id];
+    if (!t || !t.answers) return null;
+    const a = t.answers;
+    const bits = [];
+    if ((a.kind || '').trim()) bits.push(a.kind.trim());
+    if ((a.precursor || '').trim()) bits.push(a.precursor.trim());
+    if ((a.process || '').trim()) bits.push(a.process.trim());
+    return bits.length ? bits.join(', ') : null;
+}
+
+function treatmentFull(id) {
+    const t = treatments[id];
+    if (!t || !t.answers) return null;
+    const out = {};
+    let any = false;
+    TREATMENT_QUESTIONS.forEach(q => {
+        const v = (t.answers[q.key] || '').trim();
+        if (v) { out[q.key] = v; any = true; }
+    });
+    return any ? out : null;
+}
+
+/* ---------------- 시료 역할 목록 ---------------- */
+function renderRoleList(sel) {
+    const box = $('roleBox');
+    const list = $('roleList');
+    const hint = $('roleHint');
+
+    if (sel.length < 2) {
+        box.style.display = 'none';
+        closeChat();
+        pristineId = null;
+        return;
+    }
+    box.style.display = 'block';
+
+    if (!pristineId || !sel.some(d => d.id === pristineId)) {
+        pristineId = guessPristineId(sel) || sel[0].id;
+    }
+
+    list.innerHTML = sel.map(d => {
+        const isBase = d.id === pristineId;
+        const n = treatmentCount(d.id);
+        const info = isBase
+            ? '<span class="role-info">기준이므로 개질 정보 불필요</span>'
+            : (n > 0
+                ? '<span class="role-info filled">' + escapeHtml(treatmentBrief(d.id) || (n + '개 항목 입력됨')) + '</span>'
+                : '<span class="role-info">개질 정보 미입력</span>');
+        const btn = isBase ? '' :
+            '<button class="btn-ghost" data-chat="' + escapeHtml(d.id) + '" type="button" style="padding:3px 9px; font-size:11px;">'
+            + (n > 0 ? '수정' : '정보 입력') + '</button>';
+        return '<label class="role-item">'
+            + '<input type="radio" name="roleRadio" value="' + escapeHtml(d.id) + '"' + (isBase ? ' checked' : '') + '>'
+            + '<span class="rn">' + escapeHtml(d.name) + '</span>'
+            + '<span class="role-tag ' + (isBase ? 'base' : 'mod') + '">' + (isBase ? '기준 (pristine)' : '개질') + '</span>'
+            + info + btn
+            + '</label>';
+    }).join('');
+
+    list.querySelectorAll('input[name=roleRadio]').forEach(r => {
+        r.addEventListener('change', () => {
+            pristineId = r.value;
+            if (chatTargetId === pristineId) closeChat();
+            renderRoleList(selectedDatasets());
+            renderLocalReport();
+        });
+    });
+    list.querySelectorAll('button[data-chat]').forEach(b => {
+        b.addEventListener('click', (e) => { e.preventDefault(); openChat(b.dataset.chat); });
+    });
+
+    const auto = guessPristineId(sel);
+    const missing = sel.filter(d => d.id !== pristineId && treatmentCount(d.id) === 0).length;
+    hint.innerHTML = (auto
+            ? '시료명에서 <b>' + escapeHtml(sel.find(d => d.id === auto).name) + '</b> 을(를) 기준으로 추정했습니다. 다르면 바꿔 주세요.'
+            : '시료명으로 기준을 특정하지 못해 첫 항목을 잡았습니다. <b>확인해 주세요.</b>')
+        + (missing > 0
+            ? ' 개질 시료 ' + missing + '개의 정보가 비어 있습니다. <b>정보 입력</b>을 눌러 채우면 해석이 훨씬 구체적으로 나옵니다.'
+            : ' 개질 정보가 모두 입력되어 있습니다.');
+}
+
+/* ---------------- 개질 정보 대화창 ---------------- */
+function openChat(id) {
+    const d = selectedDatasets().find(x => x.id === id);
+    if (!d) return;
+    chatTargetId = id;
+    $('chatBox').style.display = 'block';
+    $('chatTitle').textContent = d.name + ' — 개질 정보';
+    renderChat();
+    $('chatInput').focus();
+}
+
+function closeChat() {
+    chatTargetId = null;
+    const box = $('chatBox');
+    if (box) box.style.display = 'none';
+}
+
+function renderChat() {
+    if (!chatTargetId) return;
+    const t = treatmentOf(chatTargetId);
+    const log = $('chatLog');
+    const msgs = [];
+
+    TREATMENT_QUESTIONS.forEach(q => {
+        const a = (t.answers[q.key] || '').trim();
+        if (a) {
+            msgs.push('<div class="chat-msg q">' + escapeHtml(q.q) + '</div>');
+            msgs.push('<div class="chat-msg a">' + escapeHtml(a) + '</div>');
+        }
+    });
+
+    const idx = nextQuestionIndex(chatTargetId);
+    if (idx >= 0) {
+        msgs.push('<div class="chat-msg q">' + escapeHtml(TREATMENT_QUESTIONS[idx].q) + '</div>');
+    } else {
+        msgs.push('<div class="chat-msg done">입력이 끝났습니다. 이 정보는 아래 기본 해석과 AI 해석에 함께 반영됩니다. 고치려면 <b>이 시료 정보 지우기</b>를 누르세요.</div>');
+    }
+
+    log.innerHTML = msgs.join('');
+    log.scrollTop = log.scrollHeight;
+    $('chatInput').disabled = idx < 0;
+    $('btnChatSend').disabled = idx < 0;
+    $('btnChatSkip').disabled = idx < 0;
+}
+
+function submitChatAnswer(text) {
+    if (!chatTargetId) return;
+    const idx = nextQuestionIndex(chatTargetId);
+    if (idx < 0) return;
+    const v = (text || '').trim();
+    if (!v) return;
+    treatmentOf(chatTargetId).answers[TREATMENT_QUESTIONS[idx].key] = v;
+    saveTreatments();
+    $('chatInput').value = '';
+    renderChat();
+    renderRoleList(selectedDatasets());
+    renderLocalReport();
+}
+
 /** 선택이 바뀔 때: 전송 미리보기 갱신 + 기본 해석 재계산 */
 function refreshAfterSelectionChange() {
     const sel = selectedDatasets();
-    renderPristineSelect(sel);
+    renderRoleList(sel);
     updatePayloadView(sel);
 
     const total = (snapshot && snapshot.datasets) ? snapshot.datasets.length : 0;
@@ -732,9 +964,13 @@ function buildApiPayload(sel) {
         source: snapshot.source,
         analysisSettings: snapshot.analysisSettings,
         datasets: sel.map(d => {
-            // 팝업 UI 전용 필드는 전송에서 제외
+            // 팝업 UI 전용 필드는 전송에서 제외하고, 역할과 개질 정보를 덧붙인다
             const { id, defaultSelected, isActiveInMainWindow, ...rest } = d;
-            return rest;
+            const t = treatmentFull(d.id);
+            return Object.assign(rest, {
+                role: (d.id === pristineId) ? 'pristine (기준 시료)' : 'modified (개질 시료)',
+                treatment: t || null
+            });
         }),
         onScreenTables: snapshot.onScreenTables
     };
@@ -755,10 +991,28 @@ $('btnSelNone').addEventListener('click', () => {
 
 $('btnLocal').addEventListener('click', renderLocalReport);
 
-$('optPristine').addEventListener('change', () => {
-    pristineId = $('optPristine').value;
+/* ---------------- 개질 정보 대화창 이벤트 ---------------- */
+$('btnChatSend').addEventListener('click', () => submitChatAnswer($('chatInput').value));
+
+$('chatInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitChatAnswer($('chatInput').value); }
+});
+
+$('btnChatSkip').addEventListener('click', () => {
+    // 건너뛰기도 답변으로 기록해야 다음 질문으로 넘어간다
+    submitChatAnswer('(응답 없음)');
+});
+
+$('btnChatReset').addEventListener('click', () => {
+    if (!chatTargetId) return;
+    delete treatments[chatTargetId];
+    saveTreatments();
+    renderChat();
+    renderRoleList(selectedDatasets());
     renderLocalReport();
 });
+
+$('btnChatClose').addEventListener('click', closeChat);
 
 $('optFormat').addEventListener('change', renderLocalReport);
 $('btnReload').addEventListener('click', requestSnapshot);
@@ -901,7 +1155,9 @@ function pick(d) {
         rateName: last ? last.rate : null,
         life: cl.capacityRetention_percent,
         ce: cl.averageCoulombicEfficiency_percent,
-        cycles: d.totalCycles
+        cycles: d.totalCycles,
+        treat: treatmentBrief(d.id),
+        evidence: (treatments[d.id] && treatments[d.id].answers && treatments[d.id].answers.evidence) || null
     };
 }
 
@@ -936,7 +1192,7 @@ function discussOne(P, M) {
                     tail = ' 용량은 줄었으나 초기 효율이 높아진 것은, 개질이 전해질과 반응하는 표면을 줄이는 대신 저장 사이트의 총량도 함께 감소시켰음을 시사한다.';
                 }
             }
-            paras.push(`기준 시료(**${P.name}**) 대비 개질 시료(**${M.name}**)에서는 ${body}.${tail}`);
+            paras.push(`기준 시료(**${P.name}**) 대비 개질 시료(**${M.name}**${M.treat ? ', ' + M.treat : ''})에서는 ${body}.${tail}`);
         }
     }
 
@@ -995,12 +1251,28 @@ function discussOne(P, M) {
         }
     }
 
+
+    /* 5문단 — 입력된 개질 조건 및 구조 근거와의 연결 */
+    if (M.treat) {
+        const link = (dPla !== null && dPla > 5)
+            ? '이러한 처리가 밀폐 기공의 형성을 촉진한 것으로 보이며, 위에서 관찰된 plateau 기여 확대가 그 결과로 이해된다.'
+            : ((dPla !== null && dPla < -5)
+                ? '이러한 처리가 탄소 골격에 결함과 이종 원소를 도입하여, 위에서 관찰된 slope 영역 확대로 이어진 것으로 보인다.'
+                : `${M.treat} 조건은 저장 기구의 상대적 분율을 크게 바꾸지는 않았으나, 성능 지표에는 위와 같은 차이를 남겼다.`);
+        paras.push(`본 개질은 ${M.treat} 조건으로 수행되었다. ${link}`);
+    }
+
+    if (M.evidence && M.evidence !== '(응답 없음)' && !/^없(음|다)$/.test(M.evidence.trim())) {
+        paras.push(`한편 연구자가 제시한 구조 분석 결과(${M.evidence})는 위 해석을 검증할 직접적 근거가 된다. ` +
+            '전기화학 지표에서 추론한 구조 변화와 이 분석 결과가 같은 방향을 가리키는지 확인하고, 일치한다면 이를 근거로 메커니즘 주장을 확정적으로 서술할 수 있다.');
+    }
+
     return paras;
 }
 
 /** 초록용 한 문단 */
 function abstractPara(P, mods, sysLabel) {
-    const names = mods.map(m => m.name).join(', ');
+    const names = mods.map(m => m.treat ? `${m.name}(${m.treat})` : m.name).join(', ');
     const bits = [];
     mods.forEach(M => {
         const dIce = D(M.ice, P.ice), dRev = D(M.rev, P.rev), dPla = D(M.plateau, P.plateau);
@@ -1251,6 +1523,26 @@ function buildUserMessage() {
         parts.push('');
     }
 
+    // 연구자가 대화창에 입력한 개질 조건. 성능 차이를 원인에 귀속시키는 근거가 된다.
+    const treatLines = [];
+    sel.forEach(d => {
+        if (d.id === pristineId) return;
+        const t = treatmentFull(d.id);
+        if (!t) return;
+        const seg = TREATMENT_QUESTIONS
+            .filter(q => t[q.key])
+            .map(q => `${q.key}: ${t[q.key]}`)
+            .join(' | ');
+        treatLines.push(`- ${d.name} → ${seg}`);
+    });
+    if (treatLines.length) {
+        parts.push('[연구자가 입력한 개질 조건] 아래 조건을 성능 차이의 원인으로 연결지어 해석하십시오. 조건과 결과가 모순되면 그 점을 지적하십시오.');
+        parts.push(...treatLines);
+        parts.push('');
+    } else if (cmp) {
+        parts.push('[개질 조건 미입력] 연구자가 개질 조건을 알려주지 않았습니다. 구조적 원인을 단정하지 말고 가능한 시나리오를 제시한 뒤, 어떤 정보가 있으면 확정할 수 있는지 밝히십시오.');
+        parts.push('');
+    }
     parts.push(outputSpec(lang, fmt, cmp));
 
     return parts.join('\n');
@@ -1570,6 +1862,7 @@ function renderMarkdown(src) {
 }
 
 /* ---------------- 시작 ---------------- */
+loadTreatments();   // 이전에 입력한 개질 정보 복원
 requestSnapshot();
 </script>
 </body>

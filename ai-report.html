@@ -266,50 +266,13 @@
         <span class="material-icons-round">psychology</span>
         <h1>AI 소재 해석</h1>
         <span id="dataBadge" class="badge badge-wait">데이터 대기</span>
-        <p class="sub">해석 방법 세 가지 &mdash; <b>기본 해석</b>은 키 없이 이 창에서 바로 계산되고, <b>프롬프트 복사</b>로 claude.ai·ChatGPT 무료 계정에 붙여넣을 수 있으며, <b>API 키</b>가 있으면 이 창에서 바로 생성됩니다.</p>
-    </div>
-
-    <!-- ================= API 키 ================= -->
-    <div class="card">
-        <div class="card-title"><span class="material-icons-round">key</span> Anthropic API 키</div>
-        <div class="row">
-            <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" style="flex: 3 1 380px;">
-            <button class="btn-ghost" id="btnToggleKey" type="button" style="flex: 0 0 auto;">
-                <span class="material-icons-round">visibility</span> 표시
-            </button>
-            <button class="btn-ghost" id="btnSaveKey" type="button" style="flex: 0 0 auto;">
-                <span class="material-icons-round">save</span> 저장
-            </button>
-            <button class="btn-danger" id="btnClearKey" type="button" style="flex: 0 0 auto;">
-                <span class="material-icons-round">delete</span> 삭제
-            </button>
-        </div>
-        <p class="hint">
-            키는 이 브라우저의 <code>localStorage</code>에만 저장되고 Anthropic 외 어디로도 전송되지 않습니다.
-            공용 PC에서는 저장하지 말고 사용 후 <b>삭제</b>를 눌러 주세요.
-            키 발급: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
-        </p>
+        <p class="sub">선택한 데이터를 이 창 안에서 계산해 해석합니다. 외부로 전송되는 데이터가 없습니다.</p>
     </div>
 
     <!-- ================= 옵션 ================= -->
     <div class="card">
         <div class="card-title"><span class="material-icons-round">tune</span> 해석 옵션</div>
         <div class="row">
-            <div>
-                <label class="field" for="optLang">출력 언어</label>
-                <select id="optLang">
-                    <option value="ko">한국어 (전문 용어 영문 병기)</option>
-                    <option value="en">English</option>
-                </select>
-            </div>
-            <div>
-                <label class="field" for="optEffort">해석 깊이</label>
-                <select id="optEffort">
-                    <option value="medium">간단 — 빠르고 저렴</option>
-                    <option value="high" selected>표준 — 권장</option>
-                    <option value="max">심층 — 느리고 비쌈</option>
-                </select>
-            </div>
             <div>
                 <label class="field" for="optFormat">출력 형식</label>
                 <select id="optFormat">
@@ -341,10 +304,6 @@
                     <option value="generic">기타 · 자동 판단</option>
                 </select>
             </div>
-        </div>
-        <div style="margin-top: 12px;">
-            <label class="field" for="optExtra">추가 지시 (선택) — 합성 조건, 알고 있는 특성, 강조하고 싶은 논점 등</label>
-            <textarea id="optExtra" placeholder="예) 글루코스 전구체, 수열 180℃ 20h 후 1500℃ 소성. NLDFT로 폐쇄기공 증가 확인됨. 리뷰어가 ICE 손실을 지적할 것 같아 그 부분 반박 논리를 중심으로 써 줘."></textarea>
         </div>
     </div>
 
@@ -392,30 +351,10 @@
                 <button class="btn-ghost" id="btnChatReset" type="button" style="padding:4px 10px; font-size:12px;">이 시료 정보 지우기</button>
             </div>
         </div>
-        <p class="hint" id="dsHint">선택을 바꾸면 아래 기본 해석이 자동으로 다시 계산됩니다.</p>
-    </div>
-
-    <!-- ================= 전송 데이터 ================= -->
-    <div class="card">
-        <div class="card-title"><span class="material-icons-round">upload_file</span> 전송되는 데이터 (AI 해석을 쓸 때만)</div>
-        <p class="warn">
-            <b>기본 해석은 이 브라우저 안에서만 계산되며 아무것도 외부로 전송하지 않습니다.</b>
-            아래는 <b>AI 심층 해석</b>을 눌렀을 때만 Anthropic API로 전송되는 내용입니다.
-            원본 측정 로그는 보내지 않고, 위에서 선택한 데이터셋의 계산된 지표(ICE·Slope/Plateau 분율·율속·수명),
-            화면의 요약 표, 대표 사이클 곡선을 40점으로 축약한 값만 전송됩니다.
-        </p>
-        <div style="margin-top: 11px;">
-            <details>
-                <summary id="payloadSummary">전송 내용 펼쳐보기 (아직 불러오지 않음)</summary>
-                <pre id="payloadView">분석 창에서 데이터를 불러오는 중…</pre>
-            </details>
-        </div>
+        <p class="hint" id="dsHint">선택을 바꾸면 아래 해석이 자동으로 다시 계산됩니다.</p>
         <div style="margin-top: 12px; display: flex; gap: 9px; flex-wrap: wrap;">
-            <button class="btn-primary" id="btnGenerate" type="button" disabled>
-                <span class="material-icons-round">auto_awesome</span> AI 심층 해석 생성 (API 키 필요)
-            </button>
-            <button class="btn-ghost" id="btnLocal" type="button">
-                <span class="material-icons-round">calculate</span> 기본 해석 다시 계산
+            <button class="btn-primary" id="btnLocal" type="button">
+                <span class="material-icons-round">calculate</span> 해석 다시 계산
             </button>
             <button class="btn-ghost" id="btnReload" type="button">
                 <span class="material-icons-round">refresh</span> 분석 결과 다시 불러오기
@@ -424,54 +363,12 @@
         <div class="status-bar" id="statusBar" style="margin-top: 11px;"></div>
     </div>
 
-    <!-- ================= AI에 직접 붙여넣기 (키 불필요) ================= -->
-    <div class="card">
-        <div class="card-title"><span class="material-icons-round">content_paste_go</span> AI에 직접 물어보기 (API 키 없이)</div>
-        <p class="hint" style="line-height:1.8;">
-            아래 <b>프롬프트 복사</b>를 누르면 선택한 데이터·시료 역할·개질 정보와 작성 지시가 한 덩어리로 클립보드에 담깁니다.
-            <b>claude.ai</b>나 <b>ChatGPT</b>에 그대로 붙여넣으면 무료 계정으로도 해석을 받을 수 있습니다.
-            API 키도, 비용도 들지 않습니다. 받은 답변을 아래 칸에 붙여 넣으면 이 창에서 보기 좋게 정리되고 <code>.md</code>로 저장됩니다.
-        </p>
-        <div style="margin-top: 12px; display: flex; gap: 9px; flex-wrap: wrap;">
-            <button class="btn-primary" id="btnCopyPrompt" type="button">
-                <span class="material-icons-round">content_copy</span> 프롬프트 복사
-            </button>
-            <a class="btn-ghost" id="lnkClaude" href="https://claude.ai/new" target="_blank" rel="noopener"
-               style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
-                <span class="material-icons-round">open_in_new</span> claude.ai 열기
-            </a>
-            <a class="btn-ghost" id="lnkGpt" href="https://chatgpt.com/" target="_blank" rel="noopener"
-               style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
-                <span class="material-icons-round">open_in_new</span> ChatGPT 열기
-            </a>
-        </div>
-        <div style="margin-top: 11px;">
-            <details>
-                <summary id="promptSummary">붙여넣을 프롬프트 미리보기</summary>
-                <pre id="promptView">데이터를 불러오는 중…</pre>
-            </details>
-        </div>
-        <div style="margin-top: 13px;">
-            <label class="field" for="pasteBack">AI가 준 답변을 여기에 붙여넣기</label>
-            <textarea id="pasteBack" rows="4" placeholder="claude.ai 또는 ChatGPT의 답변을 통째로 복사해 붙여넣고 아래 [답변 반영]을 누르세요."></textarea>
-            <div style="margin-top: 9px; display: flex; gap: 9px; flex-wrap: wrap;">
-                <button class="btn-primary" id="btnApplyPaste" type="button">
-                    <span class="material-icons-round">done_all</span> 답변 반영
-                </button>
-                <button class="btn-ghost" id="btnClearPaste" type="button">
-                    <span class="material-icons-round">backspace</span> 지우기
-                </button>
-            </div>
-        </div>
-        <div class="status-bar" id="bridgeStatus" style="margin-top: 11px;"></div>
-    </div>
-
     <!-- ================= 결과 ================= -->
     <div class="card" id="outputCard">
         <div class="card-title" style="justify-content: space-between;">
             <span style="display:flex; align-items:center; gap:7px;">
                 <span class="material-icons-round">description</span> 해석 결과
-                <span id="outputKind" class="badge badge-ok" style="text-transform:none;">기본 해석 · 규칙 기반</span>
+                <span id="outputKind" class="badge badge-ok" style="text-transform:none;">규칙 기반 해석</span>
             </span>
             <span style="display:flex; gap:8px;">
                 <button class="btn-ghost" id="btnCopy" type="button">
@@ -483,7 +380,6 @@
             </span>
         </div>
         <div class="md" id="output"></div>
-        <div class="usage" id="usage" style="display:none;"></div>
     </div>
 
 </div>
@@ -492,39 +388,16 @@
 /* ============================================================================
  * AI 소재 해석 팝업
  *  - 부모 창(index.html)에서 postMessage 로 분석 스냅샷을 받아온다.
- *  - Anthropic API 는 이 브라우저에서 직접 호출한다(서버 없음).
- *
- * [중요] Anthropic SDK 를 최상위에서 import 하지 않는다.
- *   ES 모듈은 import 가 하나라도 실패하면 스크립트 전체가 실행되지 않는다.
- *   그러면 CDN이 막힌 환경(사내망·광고차단 확장)에서는 API 키가 필요 없는
- *   기본 해석까지 통째로 죽고, 화면이 초기 문구에서 멈춘 것처럼 보인다.
- *   따라서 SDK 는 AI 심층 해석을 실제로 누를 때만 동적으로 불러온다.
+ *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const SDK_URL = 'https://esm.sh/@anthropic-ai/sdk@0.120.0';
-let Anthropic = null;   // 최초 AI 호출 시에만 채워진다
-
-async function loadSdk() {
-    if (Anthropic) return Anthropic;
-    const mod = await import(SDK_URL);
-    Anthropic = mod.default || mod.Anthropic;
-    if (!Anthropic) throw new Error('SDK 모듈에서 Anthropic 클래스를 찾지 못했습니다.');
-    return Anthropic;
-}
-
-const MODEL = 'claude-opus-5';
-const STORAGE_KEY = 'hc_anthropic_api_key';
-
-/* 이 문서의 버전. js/20-ai-report.js 의 AI_REPORT_PAGE_VERSION 과 같아야 한다.
-   다르면 브라우저가 옛 문서를 캐시에서 꺼내 쓴 것이므로 사용자에게 알린다. */
-const POPUP_VERSION = '1.9.0';
+const POPUP_VERSION = '1.10.0';
 
 const $ = (id) => document.getElementById(id);
 
 let snapshot = null;         // 부모 창에서 받은 분석 결과 (전체 데이터셋)
 let selectedIds = new Set(); // 사용자가 이 창에서 고른 데이터셋 id
 let rawMarkdown = '';        // 생성된 원문 (복사/저장용)
-let busy = false;
 
 /* ---------------- 오리진 (file:// 대응) ---------------- */
 function targetOrigin() {
@@ -535,32 +408,6 @@ function originAllowed(origin) {
     return t === '*' || origin === t;
 }
 
-/* ---------------- API 키 ---------------- */
-$('apiKey').value = localStorage.getItem(STORAGE_KEY) || '';
-
-$('btnToggleKey').addEventListener('click', () => {
-    const el = $('apiKey');
-    const show = el.type === 'password';
-    el.type = show ? 'text' : 'password';
-    $('btnToggleKey').innerHTML = show
-        ? '<span class="material-icons-round">visibility_off</span> 숨김'
-        : '<span class="material-icons-round">visibility</span> 표시';
-});
-
-$('btnSaveKey').addEventListener('click', () => {
-    const v = $('apiKey').value.trim();
-    if (!v) { setStatus('저장할 키가 비어 있습니다.', 'err'); return; }
-    localStorage.setItem(STORAGE_KEY, v);
-    setStatus('API 키를 이 브라우저에 저장했습니다.', 'ok');
-});
-
-$('btnClearKey').addEventListener('click', () => {
-    localStorage.removeItem(STORAGE_KEY);
-    $('apiKey').value = '';
-    setStatus('저장된 API 키를 삭제했습니다.', 'ok');
-});
-
-/* ---------------- 상태 표시 ---------------- */
 function setStatus(text, kind, spinning) {
     const bar = $('statusBar');
     const color = kind === 'err' ? '#f87171' : (kind === 'ok' ? '#34d399' : 'var(--text-muted)');
@@ -600,7 +447,6 @@ function handshakeFailed(reason) {
         escapeHtml(reason) +
         '<br><br>분석 창(메인 페이지)에서 <b>AI 소재 해석</b> 버튼을 다시 눌러 이 창을 열어 주세요. ' +
         '이 창을 직접 새로고침하면 부모 창과의 연결이 끊어져 데이터를 받아올 수 없습니다.</p>';
-    $('payloadView').textContent = reason;
 }
 
 function requestSnapshot() {
@@ -958,7 +804,7 @@ function renderChat() {
     if (idx >= 0) {
         msgs.push('<div class="chat-msg q">' + escapeHtml(TREATMENT_QUESTIONS[idx].q) + '</div>');
     } else {
-        msgs.push('<div class="chat-msg done">입력이 끝났습니다. 이 정보는 아래 기본 해석과 AI 해석에 함께 반영됩니다. 고치려면 <b>이 시료 정보 지우기</b>를 누르세요.</div>');
+        msgs.push('<div class="chat-msg done">입력이 끝났습니다. 이 정보는 아래 해석에 함께 반영됩니다. 고치려면 <b>이 시료 정보 지우기</b>를 누르세요.</div>');
     }
 
     log.innerHTML = msgs.join('');
@@ -980,22 +826,18 @@ function submitChatAnswer(text) {
     renderChat();
     renderRoleList(selectedDatasets());
     renderLocalReport();
-    updatePromptView();
 }
 
 /** 선택이 바뀔 때: 전송 미리보기 갱신 + 기본 해석 재계산 */
 function refreshAfterSelectionChange() {
     const sel = selectedDatasets();
     renderRoleList(sel);
-    updatePayloadView(sel);
-    updatePromptView();
 
     const total = (snapshot && snapshot.datasets) ? snapshot.datasets.length : 0;
     $('dsHint').textContent = total
         ? `${total}개 중 ${sel.length}개 선택됨. 선택을 바꾸면 기본 해석이 자동으로 다시 계산됩니다.`
         : '';
 
-    $('btnGenerate').disabled = busy || sel.length === 0;
     $('btnLocal').disabled = sel.length === 0;
 
     if (sel.length === 0) {
@@ -1006,91 +848,8 @@ function refreshAfterSelectionChange() {
     renderLocalReport();
 }
 
-function updatePayloadView(sel) {
-    const payload = buildApiPayload(sel);
-    const json = JSON.stringify(payload, null, 2);
-    $('payloadView').textContent = json;
-    const kb = (new Blob([json]).size / 1024).toFixed(1);
-    const names = sel.length ? sel.map(d => d.name).join(', ') : '없음';
-    $('payloadSummary').textContent = `전송 내용 펼쳐보기 — 선택 ${sel.length}개 (${names}) · ${kb} KB`;
-}
-
-/** AI로 보낼 페이로드 = 선택된 데이터셋만 담은 스냅샷 */
-function buildApiPayload(sel) {
-    if (!snapshot) return {};
-    return {
-        generatedAt: snapshot.generatedAt,
-        source: snapshot.source,
-        analysisSettings: snapshot.analysisSettings,
-        datasets: sel.map(d => {
-            // 팝업 UI 전용 필드는 전송에서 제외하고, 역할과 개질 정보를 덧붙인다
-            const { id, defaultSelected, isActiveInMainWindow, ...rest } = d;
-            const t = treatmentFull(d.id);
-            return Object.assign(rest, {
-                role: (d.id === pristineId) ? 'pristine (기준 시료)' : 'modified (개질 시료)',
-                treatment: t || null
-            });
-        }),
-        onScreenTables: snapshot.onScreenTables
-    };
-}
-
-$('btnSelAll').addEventListener('click', () => {
-    if (!snapshot || !snapshot.datasets) return;
-    snapshot.datasets.forEach(d => selectedIds.add(d.id));
-    renderDatasetList();
-    refreshAfterSelectionChange();
-});
-
-$('btnSelNone').addEventListener('click', () => {
-    selectedIds.clear();
-    renderDatasetList();
-    refreshAfterSelectionChange();
-});
-
-$('btnLocal').addEventListener('click', renderLocalReport);
-
-/* ---------------- 개질 정보 대화창 이벤트 ---------------- */
-$('btnChatSend').addEventListener('click', () => submitChatAnswer($('chatInput').value));
-
-$('chatInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); submitChatAnswer($('chatInput').value); }
-});
-
-$('btnChatSkip').addEventListener('click', () => {
-    // 건너뛰기도 답변으로 기록해야 다음 질문으로 넘어간다
-    submitChatAnswer('(응답 없음)');
-});
-
-$('btnChatReset').addEventListener('click', () => {
-    if (!chatTargetId) return;
-    delete treatments[chatTargetId];
-    saveTreatments();
-    renderChat();
-    renderRoleList(selectedDatasets());
-    renderLocalReport();
-    updatePromptView();
-});
-
-$('btnChatClose').addEventListener('click', closeChat);
-
-$('optFormat').addEventListener('change', () => { renderLocalReport(); updatePromptView(); });
-$('optLang').addEventListener('change', updatePromptView);
-$('optSystem').addEventListener('change', () => { renderLocalReport(); updatePromptView(); });
-$('optExtra').addEventListener('input', updatePromptView);
-$('btnReload').addEventListener('click', requestSnapshot);
-
-/* ============================================================================
- * 기본 해석 (규칙 기반 · API 키 불필요 · 외부 전송 없음)
- *
- * spec_명세서.md 3.1장(ICE 판정 기준)과 5장(분율별 메커니즘·디스커션 방향) 표를
- * 그대로 코드로 옮긴 것입니다. 브라우저 안에서만 계산되며 비용이 들지 않습니다.
- * AI 심층 해석과 달리 정해진 틀을 벗어나지 못하므로, 판정 근거를 보여주는 데
- * 목적이 있습니다.
- * ========================================================================== */
-
+/** 숫자 표시용 포맷. 값이 없으면 대시로 표시한다. */
 const N = (v, d = 1) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
-
 
 /* ---------------- 계열별 규칙 기반 판정 프로파일 ----------------
  * 기본 해석도 계열을 따라야 한다. 하드카본 기준(ICE 85/75, plateau 55%)을
@@ -1103,6 +862,7 @@ const N = (v, d = 1) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : 
  * ---------------------------------------------------------------- */
 const FAMILY_PROFILES = {
     'lib-layered': {
+        label: 'LIB 양극 · 층상 산화물 (NCM·NCA·LCO)',
         kind: 'cathode', theoretical: 275, slopePlateau: false,
         ice: { good: 90, ok: 85,
             goodNote: '층상 산화물로서 우수한 수준이다. 표면 잔류 리튬과 초기 계면 저항이 잘 제어된 것으로 볼 수 있다.',
@@ -1116,6 +876,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'lib-lirich': {
+        label: 'LIB 양극 · Li-rich 층상',
         kind: 'cathode', theoretical: 320, slopePlateau: false,
         ice: { good: 82, ok: 72,
             goodNote: 'Li-rich 계열로서는 높은 편이다. 첫 사이클 산소 손실이 상대적으로 억제된 것으로 볼 수 있다.',
@@ -1129,6 +890,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'lib-spinel': {
+        label: 'LIB 양극 · 스피넬 (LMO·LNMO)',
         kind: 'cathode', theoretical: 148, slopePlateau: false,
         ice: { good: 93, ok: 88,
             goodNote: '스피넬로서 우수하다. 초기 부반응이 잘 억제된 것으로 볼 수 있다.',
@@ -1142,6 +904,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'lib-olivine': {
+        label: 'LIB 양극 · 올리빈 (LFP·LMFP)',
         kind: 'cathode', theoretical: 170, slopePlateau: false,
         ice: { good: 95, ok: 90,
             goodNote: '올리빈계로서 우수하다. 2상 반응의 가역성이 잘 확보되어 있다.',
@@ -1155,6 +918,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'sib-layered': {
+        label: 'SIB 양극 · 층상 산화물 (P2·O3)',
         kind: 'cathode', theoretical: 240, slopePlateau: false,
         ice: null,
         iceNote: 'Na 층상 산화물은 조성에 따른 편차가 매우 커서 ICE 범위만으로 우열을 판정하기 어렵다. 같은 조건에서 측정한 기준 시료와의 비교로만 논하는 것이 안전하다.',
@@ -1166,6 +930,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'sib-polyanion': {
+        label: 'SIB 양극 · 폴리음이온 (NVP·NVPF)',
         kind: 'cathode', theoretical: 128, slopePlateau: false,
         ice: { good: 94, ok: 88,
             goodNote: 'NASICON 계열로서 우수하다. 골격 안정성이 잘 발현된 것으로 볼 수 있다.',
@@ -1179,6 +944,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'sib-pba': {
+        label: 'SIB 양극 · 프러시안블루 유사체',
         kind: 'cathode', theoretical: 171, slopePlateau: false,
         ice: null,
         iceNote: '프러시안블루 유사체는 결정수 함량과 [Fe(CN)6] 공공에 따라 편차가 매우 커서 ICE 범위만으로 판정하기 어렵다. 건조 조건을 명시한 동일 조건 비교로만 논해야 한다.',
@@ -1190,6 +956,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'sib-hardcarbon': {
+        label: 'SIB 음극 · 하드카본',
         kind: 'anode', theoretical: 400, slopePlateau: true,
         ice: { good: 85, ok: 75,
             goodNote: '탑티어 SIB 수준이다. SEI 형성 손실이 잘 억제되어 있다.',
@@ -1203,6 +970,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'lib-graphite': {
+        label: 'LIB 음극 · 흑연',
         kind: 'anode', theoretical: 372, slopePlateau: false,
         ice: { good: 93, ok: 88,
             goodNote: '흑연으로서 우수하다. SEI 형성이 잘 제어되어 있다.',
@@ -1215,6 +983,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'lib-silicon': {
+        label: 'LIB 음극 · Si·SiOx',
         kind: 'anode', theoretical: 3579, slopePlateau: false,
         ice: { good: 80, ok: 70,
             goodNote: 'Si 계열로서는 우수한 편이다. 초기 SEI 형성이 잘 억제되어 있다.',
@@ -1228,6 +997,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'lib-lto': {
+        label: 'LIB 음극 · LTO',
         kind: 'anode', theoretical: 175, slopePlateau: false,
         ice: { good: 97, ok: 93,
             goodNote: 'LTO 로서 우수하다. 무팽창 특성이 잘 발현되어 있다.',
@@ -1240,6 +1010,7 @@ const FAMILY_PROFILES = {
         ]
     },
     'generic': {
+        label: '자동 판단 (계열 미지정)',
         kind: 'unknown', theoretical: null, slopePlateau: false,
         ice: null,
         iceNote: '재료 계열이 지정되지 않아 ICE 판정 기준을 적용할 수 없다. 상단에서 전지 시스템을 선택하면 해당 계열 기준으로 판정한다.',
@@ -1672,14 +1443,14 @@ function buildLocalReport(sel, settings) {
     const fmt = ($('optFormat') && $('optFormat').value) || 'discussion';
     const prof = currentProfile();   // 계열별 판정 기준
     const sysVal = ($('optSystem') && $('optSystem').value) || 'sib-hardcarbon';
-    // 계열 이름은 FAMILY_SPECS 에서 가져온다 (드롭다운이 늘어나도 자동으로 따라온다)
-    const sysLabel = (FAMILY_SPECS[sysVal] && FAMILY_SPECS[sysVal].label) || '반쪽전지';
+    // 계열 이름은 FAMILY_PROFILES 에서 가져온다 (드롭다운이 늘어나도 자동으로 따라온다)
+    const sysLabel = (FAMILY_PROFILES[sysVal] && FAMILY_PROFILES[sysVal].label) || '반쪽전지';
 
     const L = [];
-    L.push('## 기본 해석 (규칙 기반)');
+    L.push('## 해석 결과 (규칙 기반)');
     L.push('');
     L.push('*이 창 안에서 계산된 결과입니다. 외부로 전송된 데이터는 없습니다. ' +
-           '정해진 규칙으로 쓰인 초안이므로, 합성 조건을 반영한 서술이나 문장 다듬기는 아래 **AI 심층 해석**을 쓰십시오.*');
+           '정해진 규칙으로 쓰인 초안이므로 전문가 검토 후 사용하십시오.*');
     L.push('');
 
     // 이상값이 있으면 해석보다 먼저 알린다
@@ -1778,15 +1549,13 @@ function renderLocalReport() {
     rawMarkdown = buildLocalReport(sel, snapshot ? snapshot.analysisSettings : null);
     $('output').innerHTML = renderMarkdown(rawMarkdown);
     $('outputCard').style.display = 'block';
-    $('usage').style.display = 'none';
-    $('outputKind').textContent = '기본 해석 · 규칙 기반';
-    setStatus(`기본 해석 완료 (선택 ${sel.length}개). AI 심층 해석은 API 키가 필요합니다.`, 'ok');
+    $('outputKind').textContent = '규칙 기반 해석';
+    setStatus(`해석 완료 (선택 ${sel.length}개).`, 'ok');
 }
 
-/* ---------------- 프롬프트 ---------------- */
 /* ---------------- 재료 계열별 판정 기준 ----------------
  * 계열을 잘못 적용하면 해석이 통째로 틀린다. ICE 기준도 저장 기구도 계열마다
- * 다르기 때문이다. 그래서 선택된 계열의 기준만 프롬프트에 싣는다.
+ * 다르기 때문이다. 그래서 선택된 계열의 기준만 판정에 쓴다.
  *
  * [의도적으로 넣지 않은 것]
  *  · 분극의 절대 기준: 로딩·전극 두께·전류·셀 구성에 따라 몇 배씩 달라져
@@ -1800,576 +1569,8 @@ function renderLocalReport() {
 
 const NL_P = String.fromCharCode(10);
 
-const FAMILY_SPECS = {
-    'lib-layered': {
-        label: 'LIB 양극 · 층상 산화물 (NCM·NCA·LCO)',
-        lines: [
-            '이 데이터는 Li 이온 전지용 층상 산화물 양극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· 실용 가역 용량: LCO 140~150(4.2 V) 또는 165~175(4.45 V) / NCM111 150~160 / NCM523 160~170 / NCM622 170~180 / NCM811 190~205 / NCA 185~200 mAh/g (별도 표기 없으면 4.3 V 컷오프 기준). 이론 용량은 모두 274~279 mAh/g 부근입니다.',
-            '· ICE: LCO 93~97%, NCM 계열은 Ni 함량이 높을수록 낮아져 NCM111 87~92%, NCM622 86~90%, NCM811·NCA 85~89% 가 통상입니다.',
-            '· 용량이 Ni 함량 대비 현저히 낮으면 소성 조건 부족, Li 휘발에 의한 조성 이탈, 표면 잔류 리튬(Li2CO3·LiOH)을 의심하십시오.',
-            '· dQ/dV 상전이 지문: H1→M 약 3.7 V, M→H2 약 4.0 V, H2→H3 약 4.2 V(Ni 함량 0.6 이상에서만 뚜렷). H2→H3 는 c축 급수축을 동반해 2차 입자 미세균열을 유발하는 주원인이며, 이 피크의 강도 감소와 위치 이동이 Ni-rich 열화의 가장 직접적인 지표입니다. 제공된 dQ/dV 피크의 첫 사이클과 마지막 사이클을 비교해 반드시 언급하십시오.',
-            '· 열화 기구를 세 가지로 구분하십시오. 하나로 뭉뚱그리지 마십시오.',
-            '  (1) 표면 암염상(rock-salt·NiO-like) 형성 → 계면 저항 증가 → 분극 증가와 율속 저하가 먼저 나타남',
-            '  (2) 2차 입자 미세균열 → 새 표면 노출 → 부반응 가속 → CE 저하 동반',
-            '  (3) Li/Ni 양이온 혼합 증가 → Li 확산 경로 차단 → 용량과 율속 동시 저하',
-            '  율속 저하가 크지만 저율 복귀 시 회복되면 (1)에, 회복되지 않고 CE 도 낮으면 (2)에 무게를 두십시오. XRD I(003)/I(104) 비와 단면 SEM 으로 확정할 수 있다고 제시하십시오.',
-            '· 개질 효과의 전형: 표면 코팅(Al2O3, Li3PO4, LiNbO3 등)은 분극 증가 억제와 CE 개선으로, 벌크 도핑(Al, Mg, Ti, W, B, Zr 등)은 H2→H3 전이 완화와 격자 지지 효과로 나타납니다. 데이터가 이 전형과 다르면 그 점을 지적하십시오.',
-            '· 단결정과 다결정은 열화 경로가 다릅니다. 다결정은 미세균열이 주 경로이고 단결정은 그것이 억제되는 대신 율속이 불리한 경향이 있습니다. 시료 형상이 명시되지 않았다면 가설로 두십시오.'
-        ]
-    },
-    'lib-lirich': {
-        label: 'LIB 양극 · Li-rich 층상',
-        lines: [
-            '이 데이터는 Li-rich 층상 산화물(xLi2MnO3 · (1-x)LiMO2) 양극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· 첫 방전 용량은 4.8~2.0 V 구간에서 250~280 mAh/g 이 통상입니다.',
-            '· 첫 충전 곡선은 4.4 V 까지의 경사 구간(전이금속 산화)과 4.5 V 부근의 긴 평탄 구간(Li2MnO3 활성화, 산소 산화환원 및 비가역 산소 손실)으로 나뉩니다. 이 구조를 확인하고 두 구간의 용량 분배를 언급하십시오.',
-            '· 이 활성화 때문에 ICE 가 70~85% 로 낮은 것이 정상입니다. 다른 양극 기준을 적용해 결함으로 서술하지 마십시오.',
-            '· 핵심 논점은 용량이 아니라 전압 감쇠입니다. 제공된 평균 방전 전압의 사이클별 변화와 에너지 유지율을 반드시 함께 논하십시오. 감쇠율은 1 mV/cycle 미만이면 우수, 1~3 보통, 3 초과면 심각한 수준으로 봅니다.',
-            '· dQ/dV 에서 3.0 V 부근 환원 피크가 성장하면 층상에서 스피넬로의 전이가 진행되고 있다는 신호입니다.'
-        ]
-    },
-    'lib-spinel': {
-        label: 'LIB 양극 · 스피넬 (LMO·LNMO)',
-        lines: [
-            '이 데이터는 스피넬 양극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· LiMn2O4: 4.05 V 와 4.15 V 두 단계 plateau. 이론 148, 실용 100~120 mAh/g(4.3 V), ICE 90~95%. 두 단계의 분리가 뚜렷할수록 결정 질서가 좋습니다. 열화는 Mn 불균등화 용출(2Mn3+ → Mn2+ + Mn4+)과 3 V 이하 과방전 시의 Jahn-Teller 왜곡이 주원인이며 고온에서 가속됩니다.',
-            '· LiNi0.5Mn1.5O4: 4.7 V 주 plateau. 이론 147, 실용 130~140 mAh/g(4.9 V), ICE 85~92%. 4.0 V 부근 Mn3+/Mn4+ 소단차의 유무와 크기가 양이온 배열 규칙성의 지표입니다(무질서형 Fd-3m 에서 뚜렷, 규칙형 P4332 에서 미약). 제공된 dQ/dV 피크에서 이 비율을 반드시 읽어 주십시오.',
-            '· LNMO 에서 CE 가 낮다면 구조 열화보다 4.5 V 이상에서의 전해질 산화 분해를 먼저 의심하십시오.'
-        ]
-    },
-    'lib-olivine': {
-        label: 'LIB 양극 · 올리빈 (LFP·LMFP)',
-        lines: [
-            '이 데이터는 올리빈계 양극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· LiFePO4: 3.45 V 의 매우 평탄한 단일 plateau(2상 반응). 이론 170, 실용 150~165 mAh/g(4.0 V), ICE 92~97%.',
-            '· LiMn(1-x)FexPO4: 4.1 V 부근 Mn 산화환원 plateau 가 추가됩니다. 이론 약 170, 실용 140~160 mAh/g(4.4 V), ICE 88~94%. 두 plateau 의 용량 비가 조성비와 맞는지 확인하십시오.',
-            '· plateau 가 기울어져 있거나 충방전 plateau 간 전압 차가 크면 입자 크기 분포, 탄소 코팅 균일도, 전자 전도 경로를 검토하십시오. 다만 분극의 절대값으로 좋고 나쁨을 단정하지 말고 기준 시료 대비 차이와 사이클에 따른 증가로 논하십시오.',
-            '· 본질적으로 전자 전도도와 Li 확산이 제한적이므로 탄소 코팅·나노화·도핑의 효과는 용량보다 율속 데이터에서 드러납니다. 율속 결과로 논증하십시오.'
-        ]
-    },
-    'sib-layered': {
-        label: 'SIB 양극 · 층상 산화물 (P2·O3)',
-        lines: [
-            '이 데이터는 Na 이온 전지용 층상 산화물 양극 반쪽전지(vs. Na/Na+) 측정으로 간주하십시오.',
-            '',
-            '· 실용 용량은 조성 편차가 매우 커서 참고 범위로만 쓰십시오. O3형 120~140 mAh/g(4.0 V), P2형 120~160 mAh/g(4.2 V). ICE 는 80~95% 로 넓게 보고 이 범위만으로 우열을 단정하지 마십시오.',
-            "· 상 구분을 먼저 하십시오. O3형은 Na 함량이 높아 초기 용량이 크지만 충전 중 O3 에서 O'3, P3, P'3 로 이어지는 다단 상전이 때문에 곡선에 계단이 많고 dQ/dV 피크가 여러 개로 갈라집니다. P2형은 Na 결핍 조성(약 0.67)에서 출발해 곡선이 매끄럽고 율속이 유리하지만 4.2 V 이상에서 P2 에서 O2 로의 전이가 일어나면 큰 부피 변화와 급격한 열화를 겪습니다. 곡선 형태와 dQ/dV 피크 개수로 어느 쪽인지 추정하고 근거를 밝히십시오.",
-            '· P2형에서 3.3 V 부근에 나타나는 계단은 Na+/공공 규칙 배열에 의한 것입니다. 개질 후 이 계단이 완만해졌다면 고용체 거동으로 전환된 것이며 대개 율속과 수명에 유리합니다. 이는 개질 효과를 논증하는 강력한 근거이므로 놓치지 마십시오.',
-            '· 상한 컷오프의 영향이 매우 큽니다. 4.0 V 로 제한했을 때와 4.3 V 이상까지 올렸을 때의 열화 속도는 전혀 다르므로 컷오프를 명시하고 그 선택의 근거를 서술하십시오.',
-            '· 공기·수분에 민감하여 보관 중 Na 추출과 수화물 생성이 일어날 수 있습니다. 초기 용량이 예상보다 낮거나 첫 사이클 거동이 이상하면 시료 취급 이력을 확인하도록 권하십시오.',
-            '· Fe·Mn 기반 조성에서는 Mn3+ 의 Jahn-Teller 왜곡과 저전압 영역의 Fe 이동이 열화에 기여할 수 있습니다.'
-        ]
-    },
-    'sib-polyanion': {
-        label: 'SIB 양극 · 폴리음이온 (NVP·NVPF)',
-        lines: [
-            '이 데이터는 폴리음이온계 Na 이온 양극 반쪽전지(vs. Na/Na+) 측정으로 간주하십시오.',
-            '',
-            '· Na3V2(PO4)3: 3.4 V 의 매우 평탄한 단일 plateau(V3+/V4+). 이론 117.6 mAh/g(2 Na), 실용 100~115 mAh/g(3.8 V), ICE 90~97%. 실측이 110 mAh/g 이상이면 2 Na 활용이 충분히 이루어진 것입니다.',
-            '· Na3V2(PO4)2F3: 3.6 V 와 4.1 V 두 plateau. 이론 128 mAh/g(2 Na), 실용 110~125 mAh/g(4.3 V), ICE 88~95%. 두 plateau 의 용량 비가 균형을 이루는지 확인하십시오.',
-            '· NASICON 골격 덕분에 수명과 율속이 우수한 것이 정상입니다. 그렇지 못하다면 탄소 코팅 불균일이나 입자 응집을 의심하십시오.',
-            '· 이 계열의 강점은 구조 안정성이므로 논지는 용량보다 수명·율속·열안정성에 두는 것이 설득력 있습니다.'
-        ]
-    },
-    'sib-pba': {
-        label: 'SIB 양극 · 프러시안블루 유사체',
-        lines: [
-            '이 데이터는 프러시안블루 유사체 양극 반쪽전지(vs. Na/Na+) 측정으로 간주하십시오.',
-            '',
-            '· 약 3.0 V 와 3.3 V 의 두 단계는 각각 고스핀·저스핀 Fe 산화환원에 대응합니다. 두 단계의 용량 비를 읽고 한쪽이 결손되어 있으면 [Fe(CN)6] 공공과 결정수 문제를 지적하십시오.',
-            '· 이론 용량은 약 170.9 mAh/g 이지만 공공과 배위수에 따라 실측은 크게 낮아집니다. 실용 120~160 mAh/g, ICE 80~95% 범위이나 편차가 커서 참고값으로만 쓰십시오.',
-            '· 진공·저온 건조 조건과 결정수 제거 이력을 반드시 함께 서술하도록 권하십시오.'
-        ]
-    },
-    'sib-hardcarbon': {
-        label: 'SIB 음극 · 하드카본',
-        lines: [
-            '이 데이터는 Na 이온 전지용 하드카본 음극 반쪽전지(vs. Na/Na+) 측정으로 간주하십시오.',
-            '',
-            '· 실용 가역 용량 250~350 mAh/g. ICE 85% 이상 우수(탑티어 SIB 수준) / 75~84.9% 보통(SEI 제어 보완 필요) / 75% 미만 낮음(넓은 비표면적·기공 노출에 의한 SEI 형성 손실 의심).',
-            '· Slope 영역(통상 0.1 V 이상)은 탄소 층간 삽입 및 결함·엣지 흡착 기여, Plateau 영역(통상 0.1 V 이하)은 밀폐 나노기공 내 Na 클러스터링 기여입니다.',
-            '· Plateau 분율 55% 초과: closed nanopore clustering 지배형. 고온 탄화에 의한 폐쇄 기공 발달을 강조하되 ICE 손실이 동반되면 SEI 패시베이션 논리를 함께 보완하고 NLDFT 기공 분석과의 매칭을 권하십시오.',
-            '· Slope 분율 55% 초과: defect & edge adsorption / intercalation 지배형. 헤테로 원소 도핑에 의한 표면 활성 결함점과 확장 격자의 역할을 강조하고 XPS 결합 분석 및 커패시터 기여율 논증과 연계하십시오.',
-            '· 두 영역이 균형 발달: 층간 삽입과 나노기공 저장의 조화로 서술하고 고율에서의 안정적 용량 유지 원인을 복합 메커니즘 관점에서 논하십시오.'
-        ]
-    },
-    'lib-graphite': {
-        label: 'LIB 음극 · 흑연',
-        lines: [
-            '이 데이터는 Li 이온 전지용 흑연 음극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· 이론 372, 실용 340~365 mAh/g. ICE 통상 90~95%. 90% 미만이면 SEI 과형성 또는 엣지면 노출 과다를 의심하십시오.',
-            '· 0.21 / 0.12 / 0.08 V 부근의 다단 plateau 는 스테이지 상전이이며 dQ/dV 피크의 선명도가 결정성 지표입니다.',
-            '· 용량이 372 mAh/g 를 넘으면 표면 저장·결함 기여 또는 질량 입력 오류를 함께 검토하십시오.',
-            '· 하드카본의 Slope/Plateau 분율 기준을 적용하지 마십시오.'
-        ]
-    },
-    'lib-silicon': {
-        label: 'LIB 음극 · Si·SiOx',
-        lines: [
-            '이 데이터는 Si 계열 음극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· Si 이론 3579, 실용 2000~3500 mAh/g, ICE 65~85%. SiOx 이론 1600~2400, 실용 1300~1700 mAh/g, ICE 65~80%.',
-            '· ICE 기준이 다른 계열과 전혀 다릅니다. 하드카본이나 흑연 기준을 적용해 낮다고 서술하지 마십시오. 80% 이상이면 Si 계열에서는 우수한 편입니다.',
-            '· 핵심 논점은 약 300% 부피 팽창에 의한 입자 균열, SEI 재형성, 전극 박리입니다.',
-            '· 사이클당 용량 감쇠율과 CE 추이를 함께 논하십시오. CE 가 99.9% 에 이르지 못하면 SEI 재형성이 계속되고 있다는 뜻입니다.'
-        ]
-    },
-    'lib-lto': {
-        label: 'LIB 음극 · LTO',
-        lines: [
-            '이 데이터는 Li4Ti5O12 음극 반쪽전지(vs. Li/Li+) 측정으로 간주하십시오.',
-            '',
-            '· 1.55 V 의 평탄한 plateau. 이론 175, 실용 160~172 mAh/g, ICE 95~99%.',
-            '· 무팽창 특성상 수명이 매우 우수한 것이 정상입니다. 유지율이 낮다면 소재 자체보다 가스 발생과 표면 반응을 먼저 의심하십시오.'
-        ]
-    },
-    'generic': {
-        label: '자동 판단 (계열 미지정)',
-        lines: [
-            '전지 시스템이 지정되지 않았습니다. 아래 참고표와 데이터를 대조해 전극 종류(양극·음극), 캐리어 이온(Li·Na), 재료 계열을 먼저 추정하고 그 추정과 근거를 첫머리에 명시한 뒤 해석하십시오. 어느 계열과도 맞지 않으면 억지로 분류하지 말고 식별 불가로 두고 필요한 정보를 물으십시오.',
-            '',
-            '[LIB 양극] LCO 약 3.9 V 140~175 / NCM·NCA 약 3.7 V 150~205 / Li-rich 첫 충전 4.5 V 평탄 250~280 / LMO 4.05·4.15 V 100~120 / LNMO 4.7 V 130~140 / LFP 3.45 V 150~165 mAh/g',
-            '[SIB 양극] 층상 P2·O3 2.0~4.2 V 120~160 / NVP 3.4 V 100~115 / NVPF 3.6·4.1 V 110~125 / PBA 3.0·3.3 V 120~160 mAh/g',
-            '[음극] 흑연 0.08~0.21 V 340~365 / 하드카본 0.01~1.0 V 250~350 / Si 계열 0.1~0.5 V 1300~3500 / LTO 1.55 V 160~172 mAh/g',
-            '',
-            '추정한 계열의 통상 ICE 범위를 함께 밝히고 그 범위와 실측을 비교해 판정하십시오. 계열을 확정하지 못했다면 ICE 판정 자체를 유보하십시오.'
-        ]
-    }
-};
 
 /* 계열과 무관하게 항상 실리는 공통부 */
-const PROMPT_HEAD = [
-    '당신은 이차전지 전극 소재를 20년간 연구해 온 전기화학 전문가입니다. 대학원생 연구자가 자신의 측정 데이터를 해석하고 탑티어 저널(예: Adv. Energy Mater., Energy Storage Mater., ACS Nano, Nature Energy)에 투고할 원고의 Results & Discussion 을 쓰도록 돕습니다.',
-    '',
-    '[가장 중요한 원칙]',
-    '숫자가 뒷받침하지 않는 주장은 절대 하지 마십시오. 제공된 데이터로 판단할 수 없는 것은 "이 데이터만으로는 확정할 수 없다"고 명시하고, 그것을 확정하려면 어떤 추가 실험이 필요한지 제시하십시오. 측정되지 않은 물성(XRD 격자상수와 I(003)/I(104), 라만, XPS, ICP 조성, BET, TEM 형상, NLDFT 기공 분포 등)을 이미 아는 것처럼 서술해서는 안 됩니다. 그런 물성은 항상 "확인이 필요한 가설"로 다루십시오.'
-];
-
-const PROMPT_METRICS = [
-    '',
-    '[함께 보아야 할 지표]',
-    '용량 하나만 보고 결론짓지 마십시오. 이 창은 아래 값을 함께 계산해 보냅니다. 제공된 것은 반드시 해석에 반영하고, 제공되지 않은 항목은 "제공되지 않았다"고 밝히되 지어내지 마십시오.',
-    '· 평균 방전 전압의 사이클별 변화와 감쇠율(mV/cycle): 용량이 유지되어도 평균 전압이 내려가면 에너지 밀도는 이미 감소하고 있는 것입니다.',
-    '· 에너지 유지율: 용량 유지율과 별개로 반드시 함께 언급하십시오.',
-    '· 분극(평균 충전 전압 − 평균 방전 전압): 절대값의 좋고 나쁨을 단정하지 마십시오. 로딩, 전극 두께, 전류, 셀 구성에 따라 몇 배씩 달라지므로 절대 기준으로 판정하면 틀립니다. 기준 시료 대비 차이와 사이클에 따른 증가만으로 논하십시오.',
-    '· dQ/dV 피크의 위치 이동과 크기 변화: 상전이의 가역성과 활성 상의 소실을 직접 보여 줍니다. 첫 사이클과 마지막 사이클을 비교하십시오. 피크가 검출되지 않았다고 표시된 경우에는 상전이를 논하지 마십시오.',
-    '· 율속 특성: 유지율의 절대값으로 우열을 판정하지 마십시오. 소재와 율속 구간에 따라 기준이 전혀 다릅니다. 대신 고율 이후 저율로 복귀했을 때 용량이 회복되는지를 보십시오. 회복되면 동역학적(저항) 제약이고, 회복되지 않으면 구조적 손실입니다. 이 둘을 구분하지 않은 서술은 리뷰어가 반드시 지적합니다.',
-    '· 쿨롱 효율의 절대값과 추이: 지속적으로 99.5% 에 미치지 못하면 부반응이 계속되고 있다는 신호입니다. 다만 반쪽전지의 CE 는 상대 전극인 Li·Na 금속의 표면 상태에 크게 좌우되므로 전극 자체의 안정성을 단정하는 근거로는 한계가 있습니다. 특히 Na 금속 반쪽전지에서는 CE 로 우열을 판정하지 말고, 확정하려면 완전지 평가가 필요하다고 제시하십시오.',
-    '· 상한 컷오프 전압: 같은 소재라도 컷오프가 다르면 열화 거동이 전혀 다릅니다. 컷오프를 명시하지 않은 비교는 성립하지 않습니다.'
-];
-
-const PROMPT_SANITY = [
-    '',
-    '[데이터 신뢰성 점검 · 해석보다 먼저 수행]',
-    '수치의 물리적 타당성을 점검하고 이상이 있으면 해석보다 먼저 경고하십시오.',
-    '· ICE 가 100% 를 초과하거나 50% 미만 → 충전·방전 용량 컬럼 매핑 반전 또는 활물질 질량 입력 오류 가능성',
-    '· 가역 용량이 해당 계열 이론 용량의 1.05 배를 넘음 → 단위(mAh 대 mAh/g) 또는 질량 입력 확인 필요',
-    '· 전압 범위와 용량 수준이 서로 모순(예: 3 V 대 작동인데 300 mAh/g 이상, 양극이라면서 1 V 이하 구동) → 계열 식별 자체를 재검토',
-    '· 양극인데 첫 사이클이 방전부터 시작 → 데이터 순서 또는 셀 구성 확인 필요',
-    '· Slope/Plateau 분율이 0% 또는 100% → 분리 전압이 곡선의 전압 범위를 벗어났을 가능성',
-    '· 율속 단계 수와 총 사이클 수가 맞지 않음 → 단계당 사이클 수 설정 확인 필요',
-    '· 평균 쿨롱 효율이 지속적으로 100% 를 상회 → 셔틀 반응 또는 계산 기준 오류'
-];
-
-const PROMPT_RULES = [
-    '',
-    '[해석 시 반드시 지킬 것]',
-    '· Slope/Plateau 분리 지표는 하드카본 해석을 위해 만들어진 것입니다. 양극을 포함한 다른 계열에서는 이 값을 "특정 전압 구간의 용량 분배"로만 읽고, 하드카본의 55% 기준이나 나노기공 클러스터링 해석을 절대 적용하지 마십시오. 해당 계열에 맞지 않는 지표라면 그렇다고 밝히고 넘어가십시오.',
-    '· ICE 판정 기준은 계열마다 다릅니다. 위에 제시된 해당 계열의 기준만 쓰고 다른 계열 기준을 가져다 쓰지 마십시오.',
-    '· 양극 반쪽전지는 첫 사이클이 충전(탈리튬화·탈소듐화)부터 시작하는 것이 일반적입니다. 데이터의 충방전 순서를 확인하고 불분명하면 그 사실을 밝힌 뒤 해석하십시오.',
-    '· 기준 시료(pristine)와 개질 시료가 함께 주어지면 모든 서술을 기준 대비 비교로 구성하고 성능 차이를 구조적·화학적 원인에 귀속시키십시오. 연구자가 개질 조건을 제공했다면 그 조건과 관찰된 결과가 정합적인지 검토하고 모순되면 지적하십시오.',
-    '· 확정과 추정을 항상 구분하고 추정에는 그것을 검증할 분석법을 함께 제시하십시오.'
-];
-
-/** 선택된 계열의 기준만 담은 시스템 프롬프트를 조립한다 */
-function buildSystemPrompt(familyKey) {
-    const fam = FAMILY_SPECS[familyKey] || FAMILY_SPECS.generic;
-    return PROMPT_HEAD
-        .concat([''], ['[대상 계열] ' + fam.label], fam.lines)
-        .concat(PROMPT_METRICS)
-        .concat(PROMPT_SANITY)
-        .concat(PROMPT_RULES)
-        .join(NL_P);
-}
-
-
-/* ---------------- 출력 형식 지시 ----------------
- * 표를 만들지 말 것. 논문 원고에 그대로 옮길 수 있는 서술문만 낸다.
- * 기준 시료(pristine)가 지정된 경우 그 대비 개질 효과를 논하는 형식으로 쓴다.
- * ---------------------------------------------- */
-function outputSpec(lang, fmt, cmp) {
-    const NLJ = String.fromCharCode(10);
-    const out = [];
-
-    if (lang === 'en') {
-        out.push('[Output format] Markdown. Absolutely no tables anywhere in the output.', '');
-        if (fmt === 'abstract' || fmt === 'both') {
-            out.push('## Abstract (draft)');
-            out.push('One self-contained paragraph of 150-250 words: what was compared, the key quantitative changes, the inferred structural origin, and the significance. No sub-headings, no lists.', '');
-        }
-        if (fmt === 'discussion' || fmt === 'both') {
-            out.push('## Discussion (draft)');
-            out.push('Four to six flowing paragraphs of manuscript-ready prose. No bullet lists inside this section. Each paragraph takes one point and moves from number to interpretation to implication.', '');
-        }
-        out.push('## Limitations and what the data cannot yet prove');
-        out.push('State plainly which claims are inference rather than measurement, and how a reviewer might challenge them.', '');
-        out.push('## Further analyses needed');
-        out.push('A short bulleted list. This section is guidance for the authors, not manuscript text.', '');
-        if (cmp) out.push('Frame everything as a comparison against the designated pristine sample: what the modification changed and why. Attribute every performance difference to a specific structural or chemical cause, and mark inference as inference.', '');
-        out.push('Quote the provided numbers exactly; never invent or re-round them. Use the impersonal past tense of journal articles.');
-        return out.join(NLJ);
-    }
-
-    out.push('[출력 형식] 마크다운. 출력 어디에도 표를 만들지 마십시오.', '');
-    if (fmt === 'abstract' || fmt === 'both') {
-        out.push('## 초록 (Abstract) 초안');
-        out.push('한 문단(공백 포함 400~600자)으로 완결하십시오. 무엇을 비교했는지, 핵심 수치 변화, 그로부터 추론되는 구조적 원인, 그 의의를 이 순서로 담으십시오. 소제목·목록·표를 쓰지 마십시오.', '');
-    }
-    if (fmt === 'discussion' || fmt === 'both') {
-        out.push('## 디스커션 (Discussion) 초안');
-        out.push('원고에 그대로 옮겨 다듬을 수 있는 수준의 문단 4~6개. 이 절 안에서는 목록이나 표를 쓰지 말고 이어지는 산문으로만 쓰십시오. 각 문단은 하나의 논점을 다루고 수치에서 해석, 함의 순으로 전개하십시오.', '');
-    }
-    out.push('## 이 데이터로 아직 말할 수 없는 것');
-    out.push('어떤 주장이 측정이 아니라 추론인지 분명히 밝히십시오. 리뷰어가 지적할 지점을 미리 짚고 어떻게 방어할지 함께 쓰십시오.', '');
-    out.push('## 논지 보강에 필요한 추가 분석');
-    out.push('짧은 목록으로. 이 절은 원고 본문이 아니라 저자를 위한 안내입니다. 각 항목은 무엇을 확인하기 위한 것인지 한 줄로 밝히십시오.', '');
-    if (cmp) out.push('모든 서술을 지정된 기준 시료(pristine) 대비 비교로 구성하십시오. 개질이 무엇을 바꾸었고 왜 그런지를 논하되, 성능 차이는 반드시 구조적·화학적 원인에 귀속시키고 확정과 추정을 구분하십시오.', '');
-    out.push('전문 용어는 한국어(영문) 병기. 제공된 수치는 그대로 인용하고 임의로 반올림하지 마십시오. 논문체로 쓰십시오.');
-    return out.join(NLJ);
-}
-
-
-function buildUserMessage() {
-    const lang = $('optLang').value;
-    const sysKind = $('optSystem').value;
-    const extra = $('optExtra').value.trim();
-
-    const parts = [];
-    parts.push('아래는 HC-Analyzer 가 측정 파일로부터 계산한 분석 결과입니다.');
-    parts.push('');
-    parts.push('```json');
-    parts.push(JSON.stringify(buildApiPayload(selectedDatasets()), null, 2));
-    parts.push('```');
-    parts.push('');
-
-    if (extra) {
-        parts.push('[연구자가 추가로 제공한 배경 정보 및 요청]');
-        parts.push(extra);
-        parts.push('');
-    }
-
-    const fmt = $('optFormat').value;
-    const sel = selectedDatasets();
-    const pris = pristineDataset(sel);
-    const cmp = !!(pris && sel.length > 1);
-
-    if (cmp) {
-        parts.push(`[시료 구성] 기준 시료(pristine)는 "${pris.name}" 입니다. 나머지 ${sel.length - 1}개는 개질 시료로 간주하고, ` +
-            '기준 시료 대비 각 개질 시료에서 무엇이 어떻게 달라졌는지를 중심으로 서술하십시오.');
-        parts.push('');
-    } else if (sel.length > 1) {
-        parts.push('[시료 구성] 기준 시료가 지정되지 않았습니다. 어느 것이 대조군인지 데이터로부터 추정하고, 그 가정을 첫머리에 명시한 뒤 서술하십시오.');
-        parts.push('');
-    }
-
-    // 연구자가 대화창에 입력한 개질 조건. 성능 차이를 원인에 귀속시키는 근거가 된다.
-    const treatLines = [];
-    sel.forEach(d => {
-        if (d.id === pristineId) return;
-        const t = treatmentFull(d.id);
-        if (!t) return;
-        const seg = TREATMENT_QUESTIONS
-            .filter(q => t[q.key])
-            .map(q => `${q.key}: ${t[q.key]}`)
-            .join(' | ');
-        treatLines.push(`- ${d.name} → ${seg}`);
-    });
-    if (treatLines.length) {
-        parts.push('[연구자가 입력한 개질 조건] 아래 조건을 성능 차이의 원인으로 연결지어 해석하십시오. 조건과 결과가 모순되면 그 점을 지적하십시오.');
-        parts.push(...treatLines);
-        parts.push('');
-    } else if (cmp) {
-        parts.push('[개질 조건 미입력] 연구자가 개질 조건을 알려주지 않았습니다. 구조적 원인을 단정하지 말고 가능한 시나리오를 제시한 뒤, 어떤 정보가 있으면 확정할 수 있는지 밝히십시오.');
-        parts.push('');
-    }
-    parts.push(outputSpec(lang, fmt, cmp));
-
-    return parts.join('\n');
-}
-
-/* ---------------- AI에 직접 붙여넣기 (API 키 불필요) ----------------
- * 브라우저만으로 Claude·GPT 를 "무료로 호출"할 방법은 없다. 추론 비용은
- * 누군가 내야 하고, 키 없이 호출을 대신해 주는 공개 엔드포인트는 신뢰할 수 없다.
- * 대신 확실히 되는 길이 있다: 완성된 프롬프트를 클립보드에 담아 주고,
- * 사용자가 claude.ai / ChatGPT 웹에 붙여넣게 한다. 무료 계정으로도 동작하고
- * 키도 비용도 필요 없다. 답변은 다시 붙여넣어 이 창에서 정리·저장한다.
- * ------------------------------------------------------------------- */
-
-function setBridgeStatus(text, kind) {
-    const bar = $('bridgeStatus');
-    if (!bar) return;
-    const color = kind === 'err' ? '#f87171' : (kind === 'ok' ? '#34d399' : 'var(--text-muted)');
-    bar.innerHTML = '<span style="color:' + color + '">' + escapeHtml(text) + '</span>';
-}
-
-/** 웹 채팅창에 그대로 붙여넣을 수 있는 완전한 프롬프트 */
-function fullPrompt() {
-    const NLP = String.fromCharCode(10);
-    return [
-        buildSystemPrompt($('optSystem').value),
-        '',
-        '---',
-        '',
-        buildUserMessage()
-    ].join(NLP);
-}
-
-function updatePromptView() {
-    const view = $('promptView');
-    const sum = $('promptSummary');
-    if (!view || !sum) return;
-
-    if (!snapshot || selectedDatasets().length === 0) {
-        view.textContent = '데이터셋을 선택하면 붙여넣을 프롬프트가 만들어집니다.';
-        sum.textContent = '붙여넣을 프롬프트 미리보기 (아직 없음)';
-        return;
-    }
-    const text = fullPrompt();
-    view.textContent = text;
-    const kb = (new Blob([text]).size / 1024).toFixed(1);
-    sum.textContent = '붙여넣을 프롬프트 미리보기 — ' + text.length.toLocaleString() + '자 · ' + kb + ' KB';
-}
-
-/** 클립보드 복사. 보안 컨텍스트가 아니면 수동 복사로 안내한다. */
-async function copyPromptToClipboard() {
-    if (!snapshot || selectedDatasets().length === 0) {
-        setBridgeStatus('먼저 데이터셋을 선택해 주세요.', 'err');
-        return;
-    }
-    const text = fullPrompt();
-    try {
-        await navigator.clipboard.writeText(text);
-        setBridgeStatus('복사했습니다 (' + text.length.toLocaleString() + '자). claude.ai 또는 ChatGPT 입력창에 붙여넣으세요.', 'ok');
-    } catch (err) {
-        console.warn('클립보드 복사 실패:', err);
-        const d = $('promptView').parentElement;
-        if (d && d.tagName === 'DETAILS') d.open = true;
-        setBridgeStatus('자동 복사가 차단되었습니다. 위 미리보기를 펼쳐 내용을 직접 선택해 복사해 주세요.', 'err');
-    }
-}
-
-/** 웹 채팅에서 받은 답변을 결과 카드에 반영 */
-function applyPastedAnswer() {
-    const box = $('pasteBack');
-    const text = (box.value || '').trim();
-    if (!text) {
-        setBridgeStatus('붙여넣은 내용이 없습니다.', 'err');
-        return;
-    }
-    rawMarkdown = text;
-    $('output').innerHTML = renderMarkdown(text);
-    $('outputCard').style.display = 'block';
-    $('usage').style.display = 'none';
-    $('outputKind').textContent = '웹 AI 답변 · 붙여넣기';
-    setBridgeStatus('반영했습니다. 아래 결과 카드에서 복사하거나 .md 로 저장할 수 있습니다.', 'ok');
-    $('outputCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-$('btnCopyPrompt').addEventListener('click', copyPromptToClipboard);
-$('btnApplyPaste').addEventListener('click', applyPastedAnswer);
-$('btnClearPaste').addEventListener('click', () => {
-    $('pasteBack').value = '';
-    setBridgeStatus('', null);
-});
-
-/* ---------------- 생성 ---------------- */
-$('btnGenerate').addEventListener('click', generate);
-
-async function generate() {
-    if (busy) return;
-
-    const apiKey = $('apiKey').value.trim();
-    if (!apiKey) {
-        setStatus('AI 심층 해석에는 API 키가 필요합니다. 키 없이 쓰실 수 있는 기본 해석은 이미 아래에 나와 있습니다.', 'err');
-        return;
-    }
-    if (selectedDatasets().length === 0) {
-        setStatus('분석할 데이터셋을 하나 이상 선택해 주세요.', 'err');
-        return;
-    }
-
-    busy = true;
-    $('btnGenerate').disabled = true;
-    rawMarkdown = '';
-    $('output').innerHTML = '';
-    $('usage').style.display = 'none';
-    $('outputCard').style.display = 'block';
-    $('outputKind').textContent = 'AI 심층 해석 · Claude Opus 5';
-
-    const started = Date.now();
-    const timer = setInterval(() => {
-        const s = ((Date.now() - started) / 1000).toFixed(0);
-        setStatus(`생성 중… ${s}초 (심층 해석은 1~3분 걸릴 수 있습니다)`, null, true);
-    }, 500);
-    setStatus('생성 중… 0초', null, true);
-
-    let client;
-    try {
-        const SDK = await loadSdk();
-        client = new SDK({
-            apiKey: apiKey,
-            dangerouslyAllowBrowser: true   // 서버 없는 정적 사이트라 브라우저에서 직접 호출
-        });
-    } catch (err) {
-        clearInterval(timer);
-        console.error('SDK 로드 실패:', err);
-        setStatus('실패', 'err');
-        $('output').innerHTML =
-            '<div class="err-box"><b>Anthropic SDK를 불러오지 못했습니다.</b><br>' +
-            'AI 심층 해석은 CDN(esm.sh)에서 SDK를 받아와야 합니다. 사내망 차단, 광고 차단 확장 프로그램, ' +
-            '또는 오프라인 상태인지 확인해 주세요.<br><br>' +
-            '위의 <b>기본 해석</b>은 인터넷 없이도 동작하므로 그대로 사용하실 수 있습니다.</div>';
-        busy = false;
-        $('btnGenerate').disabled = false;
-        return;
-    }
-
-    const request = {
-        model: MODEL,
-        max_tokens: 32000,
-        system: [{ type: 'text', text: buildSystemPrompt($('optSystem').value), cache_control: { type: 'ephemeral' } }],
-        thinking: { type: 'adaptive' },
-        output_config: { effort: $('optEffort').value },
-        messages: [{ role: 'user', content: buildUserMessage() }]
-    };
-
-    try {
-        // 안전 분류기가 요청을 거절할 경우 서버가 대체 모델로 자동 재실행하도록 fallbacks 활성화.
-        // 이 베타 파라미터가 거부되는 환경(프록시·구버전 등)에서는 일반 경로로 자동 재시도한다.
-        let message;
-        try {
-            message = await runStream(client, request, true);
-        } catch (err) {
-            if (isErr(err, 'BadRequestError') || (err && err.status === 400)) {
-                console.warn('fallbacks 베타 사용 불가 → 일반 경로로 재시도합니다.', err);
-                rawMarkdown = '';
-                $('output').innerHTML = '';
-                message = await runStream(client, request, false);
-            } else {
-                throw err;
-            }
-        }
-
-        clearInterval(timer);
-
-        if (message && message.stop_reason === 'refusal') {
-            setStatus('모델이 응답을 거절했습니다. 추가 지시 문구를 수정한 뒤 다시 시도해 주세요.', 'err');
-        } else {
-            const secs = ((Date.now() - started) / 1000).toFixed(1);
-            setStatus(`완료 — ${secs}초 소요`, 'ok');
-        }
-
-        if (message && message.usage) {
-            const u = message.usage;
-            const inTok = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-            const cost = (inTok / 1e6) * 5 + ((u.output_tokens || 0) / 1e6) * 25;
-            $('usage').style.display = 'block';
-            $('usage').textContent =
-                `모델 ${message.model || MODEL} · 입력 ${inTok.toLocaleString()} 토큰 · 출력 ${(u.output_tokens || 0).toLocaleString()} 토큰 · 예상 비용 약 $${cost.toFixed(3)}`;
-        }
-    } catch (err) {
-        clearInterval(timer);
-        showError(err);
-    } finally {
-        busy = false;
-        $('btnGenerate').disabled = false;
-    }
-}
-
-async function runStream(client, request, useFallbacks) {
-    const stream = useFallbacks
-        ? client.beta.messages.stream({
-            ...request,
-            betas: ['server-side-fallback-2026-07-01'],
-            fallbacks: 'default'
-        })
-        : client.messages.stream(request);
-
-    let pending = '';
-    let flushTimer = null;
-
-    const flush = () => {
-        if (!pending) return;
-        // 사용자가 위로 올려 읽고 있는 중이면 따라 내리지 않는다 (바닥 근처일 때만 자동 스크롤)
-        const nearBottom =
-            window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
-        rawMarkdown += pending;
-        pending = '';
-        $('output').innerHTML = renderMarkdown(rawMarkdown);
-        if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
-    };
-
-    for await (const event of stream) {
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            pending += event.delta.text;
-            // 토큰마다 DOM을 다시 그리면 느려지므로 짧게 버퍼링
-            if (!flushTimer) {
-                flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 90);
-            }
-        }
-    }
-
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flush();
-
-    return await stream.finalMessage();
-}
-
-// SDK 버전에 따라 존재하지 않는 오류 클래스가 있을 수 있으므로,
-// instanceof 는 클래스가 실제로 있을 때만 평가한다 (없으면 TypeError 로 죽는다).
-function isErr(err, className) {
-    if (!Anthropic) return false;   // SDK가 아직 로드되지 않았으면 판정 불가
-    const C = Anthropic[className];
-    return typeof C === 'function' && err instanceof C;
-}
-
-function showError(err) {
-    console.error(err);
-    let title = '요청에 실패했습니다.';
-    let detail = String(err && err.message ? err.message : err);
-    const status = err && typeof err.status === 'number' ? err.status : null;
-
-    if (isErr(err, 'AuthenticationError') || status === 401) {
-        title = 'API 키가 올바르지 않습니다.';
-        detail = '키를 다시 확인해 주세요. console.anthropic.com 에서 발급한 키여야 하고, 앞뒤 공백이 없어야 합니다.';
-    } else if (isErr(err, 'PermissionDeniedError') || status === 403) {
-        title = '이 키에 권한이 없습니다.';
-        detail = '해당 워크스페이스에서 Claude API 사용이 허용되어 있는지, 크레딧이 남아 있는지 확인해 주세요.';
-    } else if (isErr(err, 'RateLimitError') || status === 429) {
-        title = '요청이 너무 잦습니다 (rate limit).';
-        detail = '잠시 후 다시 시도해 주세요.';
-    } else if (isErr(err, 'BadRequestError') || status === 400) {
-        title = '요청 형식이 거부되었습니다.';
-    } else if (isErr(err, 'APIConnectionError')) {
-        title = 'Anthropic 서버에 연결하지 못했습니다.';
-        detail = '네트워크 연결, 사내 방화벽, 또는 브라우저 확장 프로그램(광고 차단 등)의 차단 여부를 확인해 주세요. ' +
-                 '파일을 file:// 로 직접 열면 CDN·API 호출이 막히므로 반드시 웹 서버(또는 GitHub Pages)로 열어야 합니다.';
-    } else if (status !== null) {
-        title = `API 오류 (${status})`;
-    }
-
-    setStatus('실패', 'err');
-    $('outputCard').style.display = 'block';
-    $('output').innerHTML =
-        `<div class="err-box"><b>${escapeHtml(title)}</b><br>${escapeHtml(detail)}</div>`;
-}
-
 /* ---------------- 복사 / 저장 ---------------- */
 $('btnCopy').addEventListener('click', async () => {
     if (!rawMarkdown) return;

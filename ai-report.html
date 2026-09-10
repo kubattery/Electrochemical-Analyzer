@@ -266,7 +266,7 @@
         <span class="material-icons-round">psychology</span>
         <h1>AI 소재 해석</h1>
         <span id="dataBadge" class="badge badge-wait">데이터 대기</span>
-        <p class="sub">기본 해석은 API 키 없이 바로 나옵니다 (이 창에서 계산 · 외부 전송 없음). AI 심층 해석은 키가 있을 때 논문 디스커션 초안까지 작성합니다.</p>
+        <p class="sub">해석 방법 세 가지 &mdash; <b>기본 해석</b>은 키 없이 이 창에서 바로 계산되고, <b>프롬프트 복사</b>로 claude.ai·ChatGPT 무료 계정에 붙여넣을 수 있으며, <b>API 키</b>가 있으면 이 창에서 바로 생성됩니다.</p>
     </div>
 
     <!-- ================= API 키 ================= -->
@@ -409,6 +409,48 @@
         <div class="status-bar" id="statusBar" style="margin-top: 11px;"></div>
     </div>
 
+    <!-- ================= AI에 직접 붙여넣기 (키 불필요) ================= -->
+    <div class="card">
+        <div class="card-title"><span class="material-icons-round">content_paste_go</span> AI에 직접 물어보기 (API 키 없이)</div>
+        <p class="hint" style="line-height:1.8;">
+            아래 <b>프롬프트 복사</b>를 누르면 선택한 데이터·시료 역할·개질 정보와 작성 지시가 한 덩어리로 클립보드에 담깁니다.
+            <b>claude.ai</b>나 <b>ChatGPT</b>에 그대로 붙여넣으면 무료 계정으로도 해석을 받을 수 있습니다.
+            API 키도, 비용도 들지 않습니다. 받은 답변을 아래 칸에 붙여 넣으면 이 창에서 보기 좋게 정리되고 <code>.md</code>로 저장됩니다.
+        </p>
+        <div style="margin-top: 12px; display: flex; gap: 9px; flex-wrap: wrap;">
+            <button class="btn-primary" id="btnCopyPrompt" type="button">
+                <span class="material-icons-round">content_copy</span> 프롬프트 복사
+            </button>
+            <a class="btn-ghost" id="lnkClaude" href="https://claude.ai/new" target="_blank" rel="noopener"
+               style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                <span class="material-icons-round">open_in_new</span> claude.ai 열기
+            </a>
+            <a class="btn-ghost" id="lnkGpt" href="https://chatgpt.com/" target="_blank" rel="noopener"
+               style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                <span class="material-icons-round">open_in_new</span> ChatGPT 열기
+            </a>
+        </div>
+        <div style="margin-top: 11px;">
+            <details>
+                <summary id="promptSummary">붙여넣을 프롬프트 미리보기</summary>
+                <pre id="promptView">데이터를 불러오는 중…</pre>
+            </details>
+        </div>
+        <div style="margin-top: 13px;">
+            <label class="field" for="pasteBack">AI가 준 답변을 여기에 붙여넣기</label>
+            <textarea id="pasteBack" rows="4" placeholder="claude.ai 또는 ChatGPT의 답변을 통째로 복사해 붙여넣고 아래 [답변 반영]을 누르세요."></textarea>
+            <div style="margin-top: 9px; display: flex; gap: 9px; flex-wrap: wrap;">
+                <button class="btn-primary" id="btnApplyPaste" type="button">
+                    <span class="material-icons-round">done_all</span> 답변 반영
+                </button>
+                <button class="btn-ghost" id="btnClearPaste" type="button">
+                    <span class="material-icons-round">backspace</span> 지우기
+                </button>
+            </div>
+        </div>
+        <div class="status-bar" id="bridgeStatus" style="margin-top: 11px;"></div>
+    </div>
+
     <!-- ================= 결과 ================= -->
     <div class="card" id="outputCard">
         <div class="card-title" style="justify-content: space-between;">
@@ -460,7 +502,7 @@ const STORAGE_KEY = 'hc_anthropic_api_key';
 
 /* 이 문서의 버전. js/20-ai-report.js 의 AI_REPORT_PAGE_VERSION 과 같아야 한다.
    다르면 브라우저가 옛 문서를 캐시에서 꺼내 쓴 것이므로 사용자에게 알린다. */
-const POPUP_VERSION = '1.5.0';
+const POPUP_VERSION = '1.6.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -923,6 +965,7 @@ function submitChatAnswer(text) {
     renderChat();
     renderRoleList(selectedDatasets());
     renderLocalReport();
+    updatePromptView();
 }
 
 /** 선택이 바뀔 때: 전송 미리보기 갱신 + 기본 해석 재계산 */
@@ -930,6 +973,7 @@ function refreshAfterSelectionChange() {
     const sel = selectedDatasets();
     renderRoleList(sel);
     updatePayloadView(sel);
+    updatePromptView();
 
     const total = (snapshot && snapshot.datasets) ? snapshot.datasets.length : 0;
     $('dsHint').textContent = total
@@ -1010,11 +1054,15 @@ $('btnChatReset').addEventListener('click', () => {
     renderChat();
     renderRoleList(selectedDatasets());
     renderLocalReport();
+    updatePromptView();
 });
 
 $('btnChatClose').addEventListener('click', closeChat);
 
-$('optFormat').addEventListener('change', renderLocalReport);
+$('optFormat').addEventListener('change', () => { renderLocalReport(); updatePromptView(); });
+$('optLang').addEventListener('change', updatePromptView);
+$('optSystem').addEventListener('change', () => { renderLocalReport(); updatePromptView(); });
+$('optExtra').addEventListener('input', updatePromptView);
 $('btnReload').addEventListener('click', requestSnapshot);
 
 /* ============================================================================
@@ -1547,6 +1595,91 @@ function buildUserMessage() {
 
     return parts.join('\n');
 }
+
+/* ---------------- AI에 직접 붙여넣기 (API 키 불필요) ----------------
+ * 브라우저만으로 Claude·GPT 를 "무료로 호출"할 방법은 없다. 추론 비용은
+ * 누군가 내야 하고, 키 없이 호출을 대신해 주는 공개 엔드포인트는 신뢰할 수 없다.
+ * 대신 확실히 되는 길이 있다: 완성된 프롬프트를 클립보드에 담아 주고,
+ * 사용자가 claude.ai / ChatGPT 웹에 붙여넣게 한다. 무료 계정으로도 동작하고
+ * 키도 비용도 필요 없다. 답변은 다시 붙여넣어 이 창에서 정리·저장한다.
+ * ------------------------------------------------------------------- */
+
+function setBridgeStatus(text, kind) {
+    const bar = $('bridgeStatus');
+    if (!bar) return;
+    const color = kind === 'err' ? '#f87171' : (kind === 'ok' ? '#34d399' : 'var(--text-muted)');
+    bar.innerHTML = '<span style="color:' + color + '">' + escapeHtml(text) + '</span>';
+}
+
+/** 웹 채팅창에 그대로 붙여넣을 수 있는 완전한 프롬프트 */
+function fullPrompt() {
+    const NLP = String.fromCharCode(10);
+    return [
+        SYSTEM_BASE,
+        '',
+        '---',
+        '',
+        buildUserMessage()
+    ].join(NLP);
+}
+
+function updatePromptView() {
+    const view = $('promptView');
+    const sum = $('promptSummary');
+    if (!view || !sum) return;
+
+    if (!snapshot || selectedDatasets().length === 0) {
+        view.textContent = '데이터셋을 선택하면 붙여넣을 프롬프트가 만들어집니다.';
+        sum.textContent = '붙여넣을 프롬프트 미리보기 (아직 없음)';
+        return;
+    }
+    const text = fullPrompt();
+    view.textContent = text;
+    const kb = (new Blob([text]).size / 1024).toFixed(1);
+    sum.textContent = '붙여넣을 프롬프트 미리보기 — ' + text.length.toLocaleString() + '자 · ' + kb + ' KB';
+}
+
+/** 클립보드 복사. 보안 컨텍스트가 아니면 수동 복사로 안내한다. */
+async function copyPromptToClipboard() {
+    if (!snapshot || selectedDatasets().length === 0) {
+        setBridgeStatus('먼저 데이터셋을 선택해 주세요.', 'err');
+        return;
+    }
+    const text = fullPrompt();
+    try {
+        await navigator.clipboard.writeText(text);
+        setBridgeStatus('복사했습니다 (' + text.length.toLocaleString() + '자). claude.ai 또는 ChatGPT 입력창에 붙여넣으세요.', 'ok');
+    } catch (err) {
+        console.warn('클립보드 복사 실패:', err);
+        const d = $('promptView').parentElement;
+        if (d && d.tagName === 'DETAILS') d.open = true;
+        setBridgeStatus('자동 복사가 차단되었습니다. 위 미리보기를 펼쳐 내용을 직접 선택해 복사해 주세요.', 'err');
+    }
+}
+
+/** 웹 채팅에서 받은 답변을 결과 카드에 반영 */
+function applyPastedAnswer() {
+    const box = $('pasteBack');
+    const text = (box.value || '').trim();
+    if (!text) {
+        setBridgeStatus('붙여넣은 내용이 없습니다.', 'err');
+        return;
+    }
+    rawMarkdown = text;
+    $('output').innerHTML = renderMarkdown(text);
+    $('outputCard').style.display = 'block';
+    $('usage').style.display = 'none';
+    $('outputKind').textContent = '웹 AI 답변 · 붙여넣기';
+    setBridgeStatus('반영했습니다. 아래 결과 카드에서 복사하거나 .md 로 저장할 수 있습니다.', 'ok');
+    $('outputCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+$('btnCopyPrompt').addEventListener('click', copyPromptToClipboard);
+$('btnApplyPaste').addEventListener('click', applyPastedAnswer);
+$('btnClearPaste').addEventListener('click', () => {
+    $('pasteBack').value = '';
+    setBridgeStatus('', null);
+});
 
 /* ---------------- 생성 ---------------- */
 $('btnGenerate').addEventListener('click', generate);

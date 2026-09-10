@@ -27,7 +27,7 @@ let _aiReportWin = null;
  * 팝업은 메인 페이지와 별개 문서이므로, 메인 창에서 Ctrl+Shift+R 을 눌러도
  * 팝업의 캐시는 갱신되지 않는다. 이 쿼리 문자열이 유일한 갱신 수단이다.
  */
-const AI_REPORT_PAGE_VERSION = '1.6.0';
+const AI_REPORT_PAGE_VERSION = '1.7.0';
 
 /**
  * postMessage 대상 오리진.
@@ -276,6 +276,288 @@ function aiRateSteps(pc) {
     }));
 }
 
+
+/* ==========================================
+   2-B. 전압 기반 지표 (평균 전압 · 에너지 · 분극)
+
+   용량만으로는 양극 열화를 진단할 수 없다. 용량이 유지되어도 평균 방전 전압이
+   내려가면 에너지 밀도는 이미 감소하고 있고(Li-rich 계열의 핵심 논점), 충방전
+   전압 차(분극)가 벌어지면 계면 저항 증가나 상전이 가역성 저하를 뜻한다.
+   화면 어디에도 표시되지 않는 값이므로 여기서 직접 계산해 AI 에게 넘긴다.
+   ========================================== */
+
+/**
+ * 곡선 한 가닥의 사다리꼴 적분.
+ * points 는 [{voltage, capacity}] 이고 capacity 는 곡선을 따라 단조 증가한다.
+ * 반환: { capacity_mAh_g, energy_Wh_kg, avgVoltage_V }
+ *   에너지 = ∫V dQ. mAh/g × V = mWh/g = Wh/kg 이므로 단위 환산이 필요 없다.
+ *   평균 전압 = 에너지 / 용량 (용량 가중 평균. 단순 산술평균과 다르다)
+ */
+function aiCurveEnergy(points) {
+    if (!Array.isArray(points) || points.length < 2) return null;
+
+    let energy = 0;
+    let capSpan = 0;
+    let prevV = null;
+    let prevQ = null;
+
+    for (const p of points) {
+        const v = parseFloat(p.voltage);
+        const q = parseFloat(p.capacity);
+        if (!isFinite(v) || !isFinite(q)) continue;
+        if (prevV !== null) {
+            const dq = q - prevQ;
+            if (dq > 0) {
+                energy += ((v + prevV) / 2) * dq;
+                capSpan += dq;
+            }
+        }
+        prevV = v;
+        prevQ = q;
+    }
+    if (!(capSpan > 0)) return null;
+
+    return {
+        capacity_mAh_g: aiNum(capSpan),
+        energy_Wh_kg: aiNum(energy),
+        avgVoltage_V: aiNum(energy / capSpan, 4)
+    };
+}
+
+/** 최소제곱 직선의 기울기 (x 단위당 y 변화). 점이 2개 미만이면 null */
+function aiSlope(xs, ys) {
+    const n = xs.length;
+    if (n < 2) return null;
+    const mx = xs.reduce((a, b) => a + b, 0) / n;
+    const my = ys.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+        num += (xs[i] - mx) * (ys[i] - my);
+        den += (xs[i] - mx) * (xs[i] - mx);
+    }
+    return den === 0 ? null : num / den;
+}
+
+/**
+ * 사이클별 전압·에너지·효율 시계열과 그 요약.
+ * 시계열이 길면 균등 간격으로 최대 maxPoints 개까지 솎아낸다(전송량 억제).
+ */
+function aiCycleMetricsSeries(pc, maxPoints) {
+    const cap = (typeof maxPoints === 'number') ? maxPoints : 40;
+    const nums = Object.keys(pc).map(Number).sort((a, b) => a - b);
+    if (nums.length === 0) return null;
+
+    const rows = [];
+    nums.forEach(n => {
+        const c = pc[n];
+        if (!c) return;
+        const dis = aiCurveEnergy(c.sodiation);      // 방전(소듐화/리튬화) 가닥
+        const chg = aiCurveEnergy(c.desodiation);    // 충전(탈소듐화/탈리튬화) 가닥
+        const dCap = aiNum(c.totalDischargeCap);
+        const cCap = aiNum(c.totalChargeCap);
+
+        rows.push({
+            cycle: n,
+            dischargeCapacity_mAh_g: dCap,
+            chargeCapacity_mAh_g: cCap,
+            coulombicEfficiency_percent:
+                (dCap > 0 && cCap != null) ? aiNum((cCap / dCap) * 100) : null,
+            avgDischargeVoltage_V: dis ? dis.avgVoltage_V : null,
+            avgChargeVoltage_V: chg ? chg.avgVoltage_V : null,
+            polarization_V: (dis && chg) ? aiNum(chg.avgVoltage_V - dis.avgVoltage_V, 4) : null,
+            dischargeEnergy_Wh_kg: dis ? dis.energy_Wh_kg : null
+        });
+    });
+    if (rows.length === 0) return null;
+
+    // 요약은 솎아내기 전 전체 데이터로 계산한다
+    const withV = rows.filter(r => r.avgDischargeVoltage_V != null);
+    const withE = rows.filter(r => r.dischargeEnergy_Wh_kg != null);
+    const withP = rows.filter(r => r.polarization_V != null);
+
+    const decay = withV.length > 2
+        ? aiSlope(withV.map(r => r.cycle), withV.map(r => r.avgDischargeVoltage_V))
+        : null;
+
+    const summary = {
+        firstCycle: rows[0].cycle,
+        lastCycle: rows[rows.length - 1].cycle,
+        avgDischargeVoltage_first_V: withV.length ? withV[0].avgDischargeVoltage_V : null,
+        avgDischargeVoltage_last_V: withV.length ? withV[withV.length - 1].avgDischargeVoltage_V : null,
+        voltageDecay_mV_per_cycle: decay === null ? null : aiNum(decay * 1000, 3),
+        dischargeEnergy_first_Wh_kg: withE.length ? withE[0].dischargeEnergy_Wh_kg : null,
+        dischargeEnergy_last_Wh_kg: withE.length ? withE[withE.length - 1].dischargeEnergy_Wh_kg : null,
+        energyRetention_percent: (withE.length > 1 && withE[0].dischargeEnergy_Wh_kg > 0)
+            ? aiNum((withE[withE.length - 1].dischargeEnergy_Wh_kg / withE[0].dischargeEnergy_Wh_kg) * 100)
+            : null,
+        polarization_first_V: withP.length ? withP[0].polarization_V : null,
+        polarization_last_V: withP.length ? withP[withP.length - 1].polarization_V : null,
+        polarizationIncrease_V: withP.length > 1
+            ? aiNum(withP[withP.length - 1].polarization_V - withP[0].polarization_V, 4) : null
+    };
+
+    // 시계열 솎아내기 (첫 사이클과 마지막 사이클은 반드시 남긴다)
+    let series = rows;
+    if (rows.length > cap) {
+        const step = (rows.length - 1) / (cap - 1);
+        const picked = [];
+        for (let i = 0; i < cap; i++) picked.push(rows[Math.round(i * step)]);
+        series = picked.filter((r, i, arr) => i === 0 || r.cycle !== arr[i - 1].cycle);
+    }
+
+    // 키 이름을 40번 반복하면 전송량이 몇 배로 불어난다.
+    // 열 이름을 한 번만 적고 값은 행 배열로 싣는다 (LLM 이 읽는 데 지장 없음).
+    const columns = ['cycle', 'dischargeCapacity_mAh_g', 'chargeCapacity_mAh_g',
+        'coulombicEfficiency_percent', 'avgDischargeVoltage_V', 'avgChargeVoltage_V',
+        'polarization_V', 'dischargeEnergy_Wh_kg'];
+
+    return {
+        note: '평균 전압은 용량 가중 평균(∫V dQ / ∫dQ)이다. 분극 = 평균 충전 전압 − 평균 방전 전압. ' +
+              '에너지는 방전 곡선의 ∫V dQ (mAh/g·V = Wh/kg). 아래 rows 는 columns 순서를 따르는 값 배열이다.',
+        efficiencyConvention: 'coulombicEfficiency_percent = 충전용량 / 방전용량 × 100 (음극 기준 정의). ' +
+              '양극 반쪽전지처럼 충전부터 시작하는 셀에서는 방전/충전으로 다시 계산해야 하므로 원시 용량을 함께 실었다.',
+        summary: summary,
+        columns: columns,
+        rows: series.map(r => columns.map(k => r[k]))
+    };
+}
+
+/* ==========================================
+   2-C. dQ/dV 피크 (직접 계산)
+
+   기존에는 화면의 dQ/dV 표를 DOM 에서 긁어 왔다. 그 탭을 한 번도 열지 않으면
+   표가 비어 있어 아무것도 전달되지 않았다. 상전이 진단은 양극 해석의 핵심이므로
+   화면 상태와 무관하게 곡선 데이터에서 직접 계산한다.
+   ========================================== */
+
+const AI_DQDV_MIN_DV = 0.005;   // 이보다 작은 전압 간격은 잡음이 증폭되므로 건너뛴다
+const AI_DQDV_SMOOTH = 5;       // 이동평균 창 크기
+const AI_DQDV_REL_THRESHOLD = 0.15;  // 최대 피크 대비 이 비율 미만은 무시
+
+// 봉우리의 상대 돌출도 임계. 봉우리가 양옆 골짜기보다 얼마나 솟아 있는지를
+// 봉우리 높이로 나눈 값이다. 잡음으로 생긴 가짜 봉우리는 0 에 가깝다.
+// 근거: 합성 곡선 실측에서 진짜 특징은 0.15~0.99(LFP 0.99, 스피넬 0.98,
+// 층상 산화물 0.35~0.89)인 반면 특징 없는 곡선은 0.00~0.21 이었다.
+// 처음에는 최대/중앙값 대비도를 썼으나 층상 산화물에서 진짜와 가짜의 간격이
+// 1.5 대 1.2 수준으로 좁아 실제 NCM 피크를 버리는 문제가 있어 교체했다.
+const AI_DQDV_MIN_PROMINENCE = 0.30;
+
+/** [{voltage, capacity}] → [{v, d}] (d = |dQ/dV|, v = 구간 중앙 전압) */
+function aiDqDvCurve(points) {
+    if (!Array.isArray(points) || points.length < 3) return [];
+
+    const clean = [];
+    for (const p of points) {
+        const v = parseFloat(p.voltage);
+        const q = parseFloat(p.capacity);
+        if (isFinite(v) && isFinite(q)) clean.push({ v: v, q: q });
+    }
+    if (clean.length < 3) return [];
+
+    const raw = [];
+    let i = 0;
+    while (i < clean.length - 1) {
+        let j = i + 1;
+        while (j < clean.length && Math.abs(clean[j].v - clean[i].v) < AI_DQDV_MIN_DV) j++;
+        if (j >= clean.length) break;
+
+        const dv = clean[j].v - clean[i].v;
+        const dq = clean[j].q - clean[i].q;
+        if (dv !== 0) {
+            raw.push({ v: (clean[i].v + clean[j].v) / 2, d: Math.abs(dq / dv) });
+        }
+        i = j;
+    }
+    if (raw.length < 3) return raw;
+
+    // 이동평균 평활
+    const half = Math.floor(AI_DQDV_SMOOTH / 2);
+    const out = [];
+    for (let k = 0; k < raw.length; k++) {
+        let sum = 0, cnt = 0;
+        for (let m = k - half; m <= k + half; m++) {
+            if (m >= 0 && m < raw.length) { sum += raw[m].d; cnt++; }
+        }
+        out.push({ v: raw[k].v, d: sum / cnt });
+    }
+    return out;
+}
+
+/**
+ * 봉우리의 돌출도. 양옆으로 자기보다 높은 지점을 만날 때까지 내려가며
+ * 만난 골짜기 중 높은 쪽을 기준으로 삼는다(표준 prominence 정의).
+ */
+function aiPeakProminence(curve, k) {
+    const h = curve[k].d;
+    let i = k - 1, minL = h;
+    while (i >= 0 && curve[i].d <= h) { if (curve[i].d < minL) minL = curve[i].d; i--; }
+    let j = k + 1, minR = h;
+    while (j < curve.length && curve[j].d <= h) { if (curve[j].d < minR) minR = curve[j].d; j++; }
+    return h - Math.max(minL, minR);
+}
+
+/** dQ/dV 국소 최대값을 크기 순으로 골라 전압 순으로 정렬해 반환 */
+function aiDqDvPeaks(points, maxPeaks) {
+    const curve = aiDqDvCurve(points);
+    if (curve.length < 3) return [];
+
+    const peak = curve.reduce((a, b) => (b.d > a.d ? b : a), curve[0]).d;
+    if (!(peak > 0)) return [];
+    const floor = peak * AI_DQDV_REL_THRESHOLD;
+
+    const found = [];
+    for (let k = 1; k < curve.length - 1; k++) {
+        if (!(curve[k].d >= floor && curve[k].d > curve[k - 1].d && curve[k].d >= curve[k + 1].d)) continue;
+        // 잡음 봉우리를 걸러낸다
+        const prom = aiPeakProminence(curve, k) / curve[k].d;
+        if (prom < AI_DQDV_MIN_PROMINENCE) continue;
+        found.push({ voltage_V: aiNum(curve[k].v, 3), dQdV: aiNum(curve[k].d, 1), prominence: aiNum(prom, 2) });
+    }
+    found.sort((a, b) => b.dQdV - a.dQdV);
+    const top = found.slice(0, (typeof maxPeaks === 'number') ? maxPeaks : 5);
+    top.sort((a, b) => a.voltage_V - b.voltage_V);
+    return top;
+}
+
+/**
+ * 대표 사이클의 충전·방전 dQ/dV 피크.
+ * 첫 사이클과 마지막 사이클을 함께 주면 피크의 이동·감쇠를 비교할 수 있다.
+ */
+function aiDqDvSummary(pc) {
+    const nums = Object.keys(pc).map(Number).sort((a, b) => a - b);
+    if (nums.length === 0) return null;
+
+    const pickCycle = (n) => {
+        const c = pc[n];
+        if (!c) return null;
+        const dis = aiDqDvPeaks(c.sodiation, 5);
+        const chg = aiDqDvPeaks(c.desodiation, 5);
+        if (dis.length === 0 && chg.length === 0) return null;
+        return { cycle: n, dischargePeaks: dis, chargePeaks: chg };
+    };
+
+    const first = pickCycle(nums[0]);
+    const last = nums.length > 1 ? pickCycle(nums[nums.length - 1]) : null;
+
+    // 피크가 잡히지 않았다면 "없음"을 이유와 함께 알린다.
+    // 조용히 비워 보내면 AI 가 이 항목을 무시하거나 지어낼 수 있다.
+    if (!first && !last) {
+        return {
+            note: '곡선에서 뚜렷한 dQ/dV 피크가 검출되지 않았다. 전압 곡선이 매끄러워 상전이에 해당하는 특징이 두드러지지 않는다는 뜻이다(고용체형 거동이거나 데이터 해상도가 낮은 경우). 이 항목을 근거로 상전이를 논하지 말 것.',
+            first: null,
+            last: null
+        };
+    }
+
+    return {
+        note: '곡선에서 직접 계산한 dQ/dV 국소 최대값이다(전압 간격 5 mV 미만 구간은 잡음으로 보아 제외, ' +
+              '이동평균 5점 평활, 최대 피크의 15% 미만은 무시). 부호는 제거하고 크기만 싣는다. ' +
+              '첫 사이클과 마지막 사이클의 피크 위치 이동과 크기 감소를 상전이 가역성의 지표로 삼을 것.',
+        first: first,
+        last: last
+    };
+}
+
 /** 대표 사이클 충방전 곡선을 최대 maxPoints 개로 축약 ([용량, 전압] 쌍) */
 function aiDownsampleCurve(points, maxPoints) {
     if (!points || points.length === 0) return [];
@@ -416,6 +698,8 @@ function aiBuildDatasetEntry(ds, settings, defaultIds) {
             slopePlateau: sp,
             rateCapability: rateSteps,
             cycleLife: aiComputeCycleLife(pc),
+            cycleMetrics: aiCycleMetricsSeries(pc),
+            dqdvPeaks: aiDqDvSummary(pc),
             representativeCurve: curveData ? {
                 cycle: curveCycleNum,
                 note: '[capacity_mAh_g, voltage_V] 쌍. 원본에서 최대 40점으로 축약됨.',

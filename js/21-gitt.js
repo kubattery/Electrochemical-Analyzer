@@ -1,5 +1,17 @@
 /* ============================================================================
- * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.4.0)
+ * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.5.0)
+ *
+ * [v1.5.0] 사이클별 확산계수 보기:
+ *          기존에는 파일의 모든 펄스를 전압순으로 한 줄에 그려 여러 사이클의
+ *          log D 가 한데 겹쳐 보였다. 이제 회차(run: 모드가 바뀔 때마다 +1)를
+ *          앞에서부터 둘씩 묶어 사이클로 정의하고(사이클 = ⌈run/2⌉, 첫 회차가
+ *          충전이든 방전이든 가정 없음), 확산계수 카드 제목 옆의 ◀ 사이클 n/N ▶
+ *          로 사이클을 넘겨 가며 해당 사이클의 충전·방전 log D 만 표시한다.
+ *          마지막 사이클이 중간에 끊겨 회차가 하나뿐이면 그 모드(충전 또는
+ *          방전) 하나만 그려지고 페이저에 "충전만"/"방전만" 표시.
+ *          펄스별 결과 테이블도 현재 사이클만 표시(사이클 컬럼 추가),
+ *          xlsx 내보내기는 전체 펄스에 Cycle 컬럼 추가. 종합 모드에서는
+ *          선택한 파일들에 같은 사이클 번호를 적용해 겹쳐 비교한다.
  *
  * [v1.4.0] 종합 데이터 모드:
  *          페이저 왼쪽의 <종합 데이터> 버튼으로 진입. 체크박스 목록(데이터1,
@@ -69,6 +81,35 @@
     var gittPage = 0;          // 현재 페이지 인덱스 (체크된 파일 목록 기준)
     var gittCombined = false;  // 종합 데이터 모드 여부
     var gittCombinedSel = {};  // 종합 모드 선택 상태 (id → false만 기록, 기본 선택)
+    var gittCycleNo = 1;       // 확산계수 차트·테이블에 표시할 사이클 번호 (1부터)
+
+    // ---- 사이클 정의 ----
+    // 회차(run)는 펄스 모드(충전/방전)가 바뀔 때마다 1씩 증가한다.
+    // 사이클 = 회차를 앞에서부터 둘씩 묶은 것(⌈run/2⌉). 첫 회차가 충전인지
+    // 방전인지 가정하지 않으므로 양극·음극 데이터 모두 동일하게 동작하며,
+    // 회차 수가 홀수이면 마지막 사이클은 한 모드(충전 또는 방전)만 갖는다.
+    function assignCycles(pulses) {
+        pulses.forEach(function (p) {
+            p.cycle = (p.run > 0) ? Math.ceil(p.run / 2) : 1;
+        });
+    }
+    function cycleCountOf(f) {
+        var n = 0;
+        if (f && f.pulses) f.pulses.forEach(function (p) { if (p.cycle > n) n = p.cycle; });
+        return n;
+    }
+    // 현재 화면(개별: 페이지 파일 / 종합: 선택 파일들)에서 넘길 수 있는 사이클 수
+    function shownCycleCount() {
+        if (gittCombined) {
+            var n = 0;
+            combinedFiles().forEach(function (f) { n = Math.max(n, cycleCountOf(f)); });
+            return n;
+        }
+        return cycleCountOf(displayedGittFile());
+    }
+    function pulsesOfCycle(f, cycleNo) {
+        return (f && f.pulses) ? f.pulses.filter(function (p) { return p.cycle === cycleNo; }) : [];
+    }
 
     function findGittFile(id) {
         for (var i = 0; i < gittFiles.length; i++) if (gittFiles[i].id === id) return gittFiles[i];
@@ -374,6 +415,7 @@
             p.run = runNo;
             p.pulseNo = ++pulseNo;
         });
+        assignCycles(pulses); // 사이클 = 회차 둘씩 묶음 (확산계수 차트 사이클 넘김용)
 
         gittPulses = pulses;
         gittPulses.pulseMode = pulseMode;
@@ -418,6 +460,7 @@
         entry.restMode = gittPulses.restMode || null;
         entry.visible = true;
         gittCombined = false; // 새로 분석한 파일은 개별 페이지로 보여준다
+        gittCycleNo = 1;      // 확산계수 차트는 첫 사이클부터
         jumpToFile(id); // 방금 분석한 파일의 페이지로 이동
         return entry;
     }
@@ -441,7 +484,7 @@
         }
         var pulses = gittPulses.map(function (p) {
             return {
-                mode: p.mode, run: p.run, pulseNo: p.pulseNo,
+                mode: p.mode, run: p.run, pulseNo: p.pulseNo, cycle: p.cycle,
                 tau: p.tau, tStart: p.tStart,
                 E0: p.E0, E_tau: p.E_tau, E_eq: p.E_eq,
                 dEt: p.dEt, dEs: p.dEs, dScaled: p.dScaled
@@ -476,6 +519,8 @@
                 dEt: p.dEt, dEs: p.dEs, dScaled: p.dScaled
             };
         });
+        // v1.5.0 이전에 저장된 payload에는 cycle이 없으므로 회차에서 다시 계산
+        assignCycles(pulses);
         var params = null;
         if (ds.gittParams && (ds.gittParams.Ld > 0 || ds.gittParams.Vm > 0 || ds.gittParams.Mb > 0)) {
             params = { Ld: ds.gittParams.Ld, Vm: ds.gittParams.Vm, Mb: ds.gittParams.Mb };
@@ -540,7 +585,7 @@
                     if (typeof renderDatasetLibraryUI === 'function') renderDatasetLibraryUI();
                 }
             }
-            if (entry) { gittCombined = false; jumpToFile(id); calcDiffusion(); renderAll(); }
+            if (entry) { gittCombined = false; gittCycleNo = 1; jumpToFile(id); calcDiffusion(); renderAll(); }
         }
         activateGittTab();
     }
@@ -766,6 +811,77 @@
         updatePagerUI();
     }
 
+    // ==================================================================
+    // 사이클 페이저: 확산계수 카드 제목 옆에 "◀ 사이클 n/N ▶" 를 삽입한다.
+    // 확산계수 차트·펄스별 결과 테이블은 현재 사이클의 펄스만 표시한다.
+    // index.html 수정 없이 JS로 삽입한다.
+    // ==================================================================
+    function buildCyclePagerUI() {
+        if ($('gittCyclePager')) return;
+        var canvas = $('chartGittDiffusion');
+        var chartBox = canvas ? canvas.parentElement : null;
+        var header = chartBox ? chartBox.previousElementSibling : null;
+        var title = header ? header.querySelector('.chart-title') : null;
+        if (!header || !title) return;
+        var btnStyle = 'background:rgba(255,255,255,0.06); border:1px solid var(--border-color);' +
+            ' border-radius:6px; color:#fff; cursor:pointer; padding:0 10px; font-size:12px; line-height:22px;';
+        // 제목과 페이저를 한 묶음으로 감싸 헤더의 좌(제목) / 우(파라미터) 배치를 유지
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex; align-items:center; gap:12px; flex-wrap:wrap;';
+        header.insertBefore(wrap, title);
+        wrap.appendChild(title);
+        var pager = document.createElement('div');
+        pager.id = 'gittCyclePager';
+        pager.style.cssText = 'display:flex; align-items:center; gap:6px;';
+        pager.innerHTML =
+            '<button id="gittCyclePrev" type="button" title="이전 사이클" style="' + btnStyle + '">&#9664;</button>' +
+            '<span id="gittCycleLabel" style="font-size:12px; color:#fff; font-weight:600; min-width:74px; text-align:center;"></span>' +
+            '<button id="gittCycleNext" type="button" title="다음 사이클" style="' + btnStyle + '">&#9654;</button>' +
+            '<span id="gittCycleNote" style="font-size:11px; color:var(--text-muted);"></span>';
+        wrap.appendChild(pager);
+        $('gittCyclePrev').addEventListener('click', function () { moveGittCycle(-1); });
+        $('gittCycleNext').addEventListener('click', function () { moveGittCycle(1); });
+        updateCyclePagerUI();
+    }
+
+    function moveGittCycle(dir) {
+        var n = shownCycleCount();
+        if (n < 1) { updateCyclePagerUI(); return; }
+        gittCycleNo = ((gittCycleNo - 1 + dir) % n + n) % n + 1; // 순환 이동
+        renderDiffusionChart();
+        renderSummaryTable();
+        updateCyclePagerUI();
+    }
+
+    // 사이클 번호를 표시 가능한 범위로 보정하고 라벨을 갱신한다.
+    // 사이클에 한 모드만 있으면(중간에 끊긴 마지막 사이클) "충전만"/"방전만" 표기.
+    function updateCyclePagerUI() {
+        var label = $('gittCycleLabel');
+        if (!label) return;
+        var n = shownCycleCount();
+        if (n < 1) gittCycleNo = 1;
+        else if (gittCycleNo > n) gittCycleNo = n;
+        else if (gittCycleNo < 1) gittCycleNo = 1;
+        label.textContent = n ? ('사이클 ' + gittCycleNo + '/' + n) : '사이클 -/-';
+
+        var note = $('gittCycleNote');
+        if (note) {
+            var files = gittCombined ? combinedFiles() : (displayedGittFile() ? [displayedGittFile()] : []);
+            var hasCh = false, hasDis = false;
+            files.forEach(function (f) {
+                pulsesOfCycle(f, gittCycleNo).forEach(function (p) {
+                    if (p.mode === 'Charge') hasCh = true; else hasDis = true;
+                });
+            });
+            note.textContent = (n && hasCh !== hasDis) ? (hasCh ? '(충전만)' : '(방전만)') : '';
+        }
+        var dim = n < 2;
+        ['gittCyclePrev', 'gittCycleNext'].forEach(function (id) {
+            var b = $(id);
+            if (b) b.style.opacity = dim ? '0.35' : '1';
+        });
+    }
+
     function moveGittPage(dir) {
         // 종합 모드에서는 ◀ ▶ 비활성 — 개별 창 복귀는 <종합 데이터> 버튼 재클릭으로만
         if (gittCombined) return;
@@ -910,6 +1026,7 @@
 
     function renderAll() {
         updatePagerUI();
+        updateCyclePagerUI(); // 사이클 번호 범위 보정 (차트·테이블보다 먼저)
         syncParamInputs();
         renderDetectCard();
         renderProfileChart();
@@ -1057,14 +1174,16 @@
 
         // 개별 모드: 현재 페이지 파일 (모드별 색). 종합 모드: 선택한 파일들을
         // 파일 색으로 겹쳐 표시(방전 = 빈 점 + 점선). 파일이 없으면 빈 축 프레임.
+        // 현재 사이클(gittCycleNo)의 펄스만 그린다 — 사이클마다 log D 가 다르므로
+        // 여러 사이클을 한 줄에 섞지 않는다. 사이클에 한 모드만 있으면 그 모드만.
         var showFiles = gittCombined ? combinedFiles() : (displayedGittFile() ? [displayedGittFile()] : []);
         var datasets = [];
         showFiles.forEach(function (f) {
-            var pulses = filterByMode(f.pulses).filter(function (p) { return p.logD != null; });
+            var pulses = filterByMode(pulsesOfCycle(f, gittCycleNo)).filter(function (p) { return p.logD != null; });
             [['Discharge', '#06b6d4'], ['Charge', '#ec4899']].forEach(function (mc) {
                 var mode = mc[0];
                 var pts = pulses.filter(function (p) { return p.mode === mode; })
-                    .map(function (p) { return { x: p.E_eq, y: p.logD }; })
+                    .map(function (p) { return { x: p.E_eq, y: p.logD, run: p.run, pulseNo: p.pulseNo, tau: p.tau }; })
                     .sort(function (a, b) { return a.x - b.x; });
                 if (!pts.length) return;
                 // 종합 모드: 같은 파일 색을 밝기만 달리해 구분 —
@@ -1072,8 +1191,9 @@
                 var color = gittCombined
                     ? (mode === 'Charge' ? shadeColor(f.color, -0.18) : shadeColor(f.color, 0.38))
                     : mc[1];
+                var cyc = 'Cycle ' + gittCycleNo + ' · ';
                 datasets.push({
-                    label: gittCombined ? (shortName(f.name) + ' · ' + mode) : mode,
+                    label: gittCombined ? (shortName(f.name) + ' · ' + cyc + mode) : (cyc + mode),
                     data: pts,
                     borderColor: color,
                     backgroundColor: color,
@@ -1100,7 +1220,9 @@
                         callbacks: {
                             label: function (ctx) {
                                 var d = Math.pow(10, ctx.parsed.y);
-                                return ctx.dataset.label + ' — E_eq ' + ctx.parsed.x.toFixed(4) + ' V, D ' + d.toExponential(2) + ' cm²/s';
+                                var raw = ctx.raw || {};
+                                var where = (raw.run != null) ? (' [회차 ' + raw.run + ' · Pulse #' + raw.pulseNo + ']') : '';
+                                return ctx.dataset.label + where + ' — E_eq ' + ctx.parsed.x.toFixed(4) + ' V, D ' + d.toExponential(2) + ' cm²/s';
                             }
                         }
                     }
@@ -1131,17 +1253,22 @@
         if (tableCard) tableCard.style.display = gittCombined ? 'none' : '';
         if (gittCombined) return;
         var f = displayedGittFile();
+        var nCols = document.querySelectorAll('#tableGittSummary thead th').length || 11;
         if (!f) {
-            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:40px 0;">GITT 파일을 업로드하거나 사이드바 라이브러리에서 GITT 체크박스를 선택하면 펄스별 분석 결과가 표시됩니다.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + nCols + '" style="text-align:center; color:var(--text-muted); padding:40px 0;">GITT 파일을 업로드하거나 사이드바 라이브러리에서 GITT 체크박스를 선택하면 펄스별 분석 결과가 표시됩니다.</td></tr>';
             return;
         }
+        // 사이클 컬럼은 index.html 헤더에 "사이클" th가 있을 때만 출력 (구버전 index.html 호환)
+        var hasCycleCol = nCols >= 11;
         var html = '';
-        filterByMode(f.pulses).forEach(function (p) {
+        // 확산계수 차트와 동일하게 현재 사이클의 펄스만 표시 (전체 목록은 xlsx 내보내기)
+        filterByMode(pulsesOfCycle(f, gittCycleNo)).forEach(function (p) {
             var badge = p.mode === 'Discharge'
                 ? '<span style="color:#06b6d4; font-weight:600;">방전</span>'
                 : '<span style="color:#ec4899; font-weight:600;">충전</span>';
             html += '<tr>' +
                 '<td style="padding:5px 8px;">' + badge + '</td>' +
+                (hasCycleCol ? '<td style="padding:5px 8px;">' + p.cycle + '</td>' : '') +
                 '<td style="padding:5px 8px;">' + p.run + '</td>' +
                 '<td style="padding:5px 8px; font-weight:600;">' + p.pulseNo + '</td>' +
                 '<td style="padding:5px 8px;">' + Math.round(p.tau) + '</td>' +
@@ -1163,12 +1290,12 @@
         // 개별 모드: 현재 페이지 파일. 종합 모드: 선택한 파일들(File 컬럼 추가).
         var files = gittCombined ? combinedFiles() : (displayedGittFile() ? [displayedGittFile()] : []);
         if (!files.length) { alert('내보낼 GITT 분석 결과가 없습니다.'); return; }
-        var header = ['Mode', 'Run', 'PulseNo', 'tau_s', 'E0_V', 'E_tau_V', 'E_eq_V', 'dEt_V', 'dEs_V', 'D_cm2_s', 'log10D'];
+        var header = ['Mode', 'Cycle', 'Run', 'PulseNo', 'tau_s', 'E0_V', 'E_tau_V', 'E_eq_V', 'dEt_V', 'dEs_V', 'D_cm2_s', 'log10D'];
         if (gittCombined) header.unshift('File');
         var data = [header];
         files.forEach(function (f) {
             f.pulses.forEach(function (p) {
-                var row = [p.mode, p.run, p.pulseNo, p.tau, p.E0, p.E_tau, p.E_eq, p.dEt, p.dEs,
+                var row = [p.mode, p.cycle, p.run, p.pulseNo, p.tau, p.E0, p.E_tau, p.E_eq, p.dEt, p.dEs,
                     p.D != null ? p.D : '', p.logD != null ? p.logD : ''];
                 if (gittCombined) row.unshift(f.name);
                 data.push(row);
@@ -1209,6 +1336,7 @@
 
         // 데이터 페이저 삽입 (업로드 카드 바로 아래)
         buildPagerUI();
+        buildCyclePagerUI();
 
         // 파라미터 입력: 현재 페이지 파일에만 적용해 D 실시간 재계산(input),
         // 입력을 마치면(change) 파일별로 IndexedDB에 저장

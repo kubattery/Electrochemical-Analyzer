@@ -1,5 +1,10 @@
 /* ============================================================================
- * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.5.0)
+ * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.5.1)
+ *
+ * [v1.5.1] 확산계수 차트 x축을 E₀(펄스 직전 휴지 마지막 전압)로 변경:
+ *          기존 x=E_eq(완화 후 전압)는 다음 펄스의 E₀와 같아, 엑셀 수동 피팅
+ *          (x=E₀)과 비교하면 충전은 오른쪽·방전은 왼쪽으로 한 펄스씩 밀려 보였다.
+ *          D 값·테이블·내보내기는 변화 없음. 툴팁에 E₀와 E_eq를 함께 표시.
  *
  * [v1.5.0] 사이클별 확산계수 보기:
  *          기존에는 파일의 모든 펄스를 전압순으로 한 줄에 그려 여러 사이클의
@@ -1183,7 +1188,10 @@
             [['Discharge', '#06b6d4'], ['Charge', '#ec4899']].forEach(function (mc) {
                 var mode = mc[0];
                 var pts = pulses.filter(function (p) { return p.mode === mode; })
-                    .map(function (p) { return { x: p.E_eq, y: p.logD, run: p.run, pulseNo: p.pulseNo, tau: p.tau }; })
+                    // x = E₀(펄스 직전 휴지 마지막 전압). 사용자 엑셀 피팅과 같은 자리에
+                    // 찍히도록 E_eq(완화 후 전압) 대신 사용 — E_eq는 다음 펄스의 E₀와 같아
+                    // 한 펄스씩 밀려 보였음(v1.5.1). D 값 자체는 변하지 않는다.
+                    .map(function (p) { return { x: p.E0, y: p.logD, run: p.run, pulseNo: p.pulseNo, tau: p.tau, E_eq: p.E_eq }; })
                     .sort(function (a, b) { return a.x - b.x; });
                 if (!pts.length) return;
                 // 종합 모드: 같은 파일 색을 밝기만 달리해 구분 —
@@ -1222,7 +1230,8 @@
                                 var d = Math.pow(10, ctx.parsed.y);
                                 var raw = ctx.raw || {};
                                 var where = (raw.run != null) ? (' [회차 ' + raw.run + ' · Pulse #' + raw.pulseNo + ']') : '';
-                                return ctx.dataset.label + where + ' — E_eq ' + ctx.parsed.x.toFixed(4) + ' V, D ' + d.toExponential(2) + ' cm²/s';
+                                var eeq = (raw.E_eq != null) ? (', E_eq ' + raw.E_eq.toFixed(4) + ' V') : '';
+                                return ctx.dataset.label + where + ' — E₀ ' + ctx.parsed.x.toFixed(4) + ' V' + eeq + ', D ' + d.toExponential(2) + ' cm²/s';
                             }
                         }
                     }
@@ -1230,7 +1239,7 @@
                 scales: {
                     x: {
                         type: 'linear',
-                        title: { display: true, text: 'Voltage (V)', color: '#fff' },
+                        title: { display: true, text: 'Voltage E₀ (V)', color: '#fff' },
                         grid: { color: 'rgba(255,255,255,0.05)' },
                         ticks: { color: '#9ca3af' }
                     },

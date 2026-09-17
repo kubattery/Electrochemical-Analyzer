@@ -380,7 +380,7 @@
             <label class="field" for="aiEndpoint">중계 서버 주소</label>
             <input type="text" id="aiEndpoint" placeholder="https://esmpl-claude-proxy.계정이름.workers.dev" autocomplete="off">
             <p class="hint">
-                연구실 중계 서버 주소입니다. API 키가 아니라 주소만 넣습니다.
+                연구실 중계 서버 주소입니다. API 키가 아니라 주소만 넣습니다. 서버가 Claude·Gemini·GPT 중 어느 것을 쓰는지는 서버 설정에 달려 있습니다.
                 이 브라우저에만 저장되며, 배포 방법은 저장소의 <code>server/README.md</code> 에 있습니다.
             </p>
             <div style="margin-top:9px; display:flex; gap:7px;">
@@ -441,7 +441,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.12.0';
+const POPUP_VERSION = '1.12.1';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2311,7 +2311,7 @@ $('btnAiTest').addEventListener('click', async () => {
     setAiStatus('연결을 확인하는 중…', null, true);
     try {
         const data = await callAi('한국어로 한 문장만 답하십시오.', [{ role: 'user', content: '연결 확인' }], 100);
-        setAiStatus('연결 정상 · 모델 ' + (data.model || '(미상)'), 'ok');
+        setAiStatus('연결 정상 · ' + (data.provider || '?') + ' · 모델 ' + (data.model || '(미상)'), 'ok');
     } catch (err) {
         setAiStatus(err.message, 'err');
     } finally {

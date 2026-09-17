@@ -1,4 +1,4 @@
-name = "esmpl-claude-proxy"
+name = "esmpl-ai-proxy"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
@@ -8,8 +8,13 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ALLOWED_ORIGINS = "https://kubattery.github.io"
 
-# 모델을 바꾸고 싶으면 주석을 풀고 값을 넣는다. 비우면 worker.js 의 기본값을 쓴다.
-# MODEL = "claude-opus-5"
+# 제공자를 직접 지정하고 싶을 때만 쓴다. 비우면 설정된 키로 자동 판별한다.
+# PROVIDER = "gemini"
 
-# ANTHROPIC_API_KEY 는 여기에 적지 않는다. 아래 명령으로 따로 넣는다.
+# 모델을 바꾸고 싶으면 주석을 풀고 값을 넣는다. 비우면 제공자별 기본값을 쓴다.
+# MODEL = "gemini-flash-latest"
+
+# API 키는 여기에 적지 않는다. 아래 명령으로 따로 넣는다.
+#   npx wrangler secret put GEMINI_API_KEY
 #   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put OPENAI_API_KEY

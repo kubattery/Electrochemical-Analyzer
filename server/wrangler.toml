@@ -1,0 +1,15 @@
+name = "esmpl-claude-proxy"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 허용할 오리진. 배포 주소가 바뀌면 여기도 바꿔야 한다.
+# 로컬에서 시험할 때는 http://localhost:8080 같은 주소를 쉼표로 덧붙인다.
+[vars]
+ALLOWED_ORIGINS = "https://kubattery.github.io"
+
+# 모델을 바꾸고 싶으면 주석을 풀고 값을 넣는다. 비우면 worker.js 의 기본값을 쓴다.
+# MODEL = "claude-opus-5"
+
+# ANTHROPIC_API_KEY 는 여기에 적지 않는다. 아래 명령으로 따로 넣는다.
+#   npx wrangler secret put ANTHROPIC_API_KEY

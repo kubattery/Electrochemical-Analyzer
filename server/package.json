@@ -1,0 +1,9 @@
+{
+  "name": "esmpl-claude-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }
+}

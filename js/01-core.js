@@ -188,9 +188,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 데이터셋 초기 로드 완료 후 칩 UI 생성
     renderCycleChipsUI();
 
-    // 프로젝트, 데모 모드, 필터 초기화
+    // 프로젝트, 필터 초기화
     initProjectManagement();
-    initDemoMode();
     initLibraryFilterChips();
 
     // 탭 검색 및 필터 이벤트 바인딩

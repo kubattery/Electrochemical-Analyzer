@@ -32,7 +32,6 @@ js/                   기능별 분리 모듈 + 백그라운드 워커 (아래 �
 | `js/03-analysis-controls.js` | 분석 컨트롤 패널 이벤트 바인딩, C-rate(율속) 모드 토글 |
 | `js/04-database.js` | IndexedDB 기반 데이터셋 영속화(저장/삭제/수정/로드) |
 | `js/05-dataset-helpers.js` | 데이터셋 이름·색상·정규화 헬퍼, 인라인 편집/이름 변경 |
-| `js/06-demo-update.js` | 데모 데이터 생성, 데이터 업데이트/실패 시뮬레이션 |
 | `js/07-projects.js` | 프로젝트 관리(추가/수정/전환) |
 | `js/08-library-table.js` | 라이브러리 테이블 렌더링, 컨텍스트 메뉴, 필터 칩 |
 | `js/09-dataset-library.js` | 데이터셋 라이브러리(이름 모달/활성 전환/삭제/사이드바 렌더) |

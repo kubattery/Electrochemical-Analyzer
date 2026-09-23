@@ -397,35 +397,25 @@ function renderDatasetLibraryUI() {
     
     const summaryTotal = document.getElementById('summaryTotal');
     const summaryCompleted = document.getElementById('summaryCompleted');
-    const summaryFailed = document.getElementById('summaryFailed');
-    const summaryNeedUpdate = document.getElementById('summaryNeedUpdate');
-    
+
     if (!listEl) return;
-    
+
     // 요약 정보 갱신 (전체 데이터셋 기준)
     if (summaryTotal) summaryTotal.textContent = datasetLibrary.length;
-    
+
     const completedCount = datasetLibrary.filter(ds => ds.conversionStatus === 'converted' || ds.conversionStatus === 'updated').length;
-    const failedCount = datasetLibrary.filter(ds => ds.conversionStatus === 'failed').length;
-    const pendingCount = datasetLibrary.filter(ds => ds.conversionStatus === 'pending' || ds.conversionStatus === 'converting').length;
-    
+
     if (summaryCompleted) summaryCompleted.textContent = completedCount;
-    if (summaryFailed) summaryFailed.textContent = failedCount;
-    if (summaryNeedUpdate) summaryNeedUpdate.textContent = pendingCount;
-    
+
     if (countEl) countEl.textContent = datasetLibrary.length;
-    
+
     listEl.innerHTML = '';
-    
+
     let displayList = [...datasetLibrary];
-    
+
     // 1. 사이드바 필터 칩 적용
     if (currentLibraryFilter !== 'all') {
-        if (currentLibraryFilter === 'failed') {
-            displayList = displayList.filter(ds => ds.conversionStatus === 'failed');
-        } else {
-            displayList = displayList.filter(ds => ds.experimentType === currentLibraryFilter);
-        }
+        displayList = displayList.filter(ds => ds.experimentType === currentLibraryFilter);
     }
     
     if (displayList.length === 0) {

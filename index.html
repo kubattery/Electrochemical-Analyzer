@@ -252,8 +252,6 @@
                 <div class="library-summary-panel" style="font-size: 10px; color: var(--text-muted); background: rgba(0,0,0,0.12); border-radius: 4px; padding: 6px 8px; margin: 8px 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;">
                     <div>전체: <span id="summaryTotal" style="color: #fff; font-weight: 600;">0</span></div>
                     <div>완료: <span id="summaryCompleted" style="color: var(--color-success); font-weight: 600;">0</span></div>
-                    <div>실패: <span id="summaryFailed" style="color: var(--color-danger); font-weight: 600;">0</span></div>
-                    <div>업데이트 필요: <span id="summaryNeedUpdate" style="color: var(--color-orange); font-weight: 600;">0</span></div>
                     <div style="grid-column: span 2; font-size: 9px; border-top: 1px solid rgba(255,255,255,0.04); padding-top: 4px; margin-top: 2px;">
                         마지막 업데이트: <span id="summaryLastTime">-</span>
                     </div>
@@ -265,7 +263,6 @@
                     <button class="chip" data-filter="cycle_performance" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">Cycle</button>
                     <button class="chip" data-filter="gitt" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">GITT</button>
                     <button class="chip" data-filter="cv" style="font-size: 9px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer;">CV</button>
-                    <button class="chip" data-filter="failed" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--color-danger); background: transparent; border-radius: 4px; color: var(--color-danger); cursor: pointer;">실패</button>
                 </div>
 
                 <div class="dataset-list" id="datasetList">
@@ -364,9 +361,6 @@
                                 <select id="libTabStatusFilter" class="select-field" style="margin-bottom: 0; height: 34px; width: 120px; box-sizing: border-box;">
                                     <option value="all">모든 상태</option>
                                     <option value="converted">완료</option>
-                                    <option value="failed">실패</option>
-                                    <option value="pending">대기 중</option>
-                                    <option value="converting">변환 중</option>
                                     <option value="updated">업데이트됨</option>
                                 </select>
                             </div>
@@ -1015,7 +1009,7 @@
     <script src="js/06-demo-update.js?v=3.0.1"></script>
     <script src="js/07-projects.js?v=3.0.1"></script>
     <script src="js/08-library-table.js?v=3.0.0"></script>
-    <script src="js/09-dataset-library.js?v=3.1.1"></script>
+    <script src="js/09-dataset-library.js?v=3.1.2"></script>
     <script src="js/10-data-processing.js?v=4.0.0"></script>
     <script src="js/11-analysis-metrics.js?v=3.1.1"></script>
     <script src="js/12-dqdv.js?v=3.0.0"></script>

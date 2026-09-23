@@ -295,9 +295,6 @@
                     <button class="tab-btn active" data-tab="tab-overview">
                         <span class="material-icons-round">dashboard</span> 개요 & ICE
                     </button>
-                    <button class="tab-btn" data-tab="tab-slope-plateau">
-                        <span class="material-icons-round">show_chart</span> Slope / Plateau
-                    </button>
                     <button class="tab-btn" data-tab="tab-rate">
                         <span class="material-icons-round">speed</span> Rate Capability
                     </button>
@@ -328,6 +325,19 @@
                     <button class="tab-btn" data-tab="tab-combined">
                         <span class="material-icons-round">grid_view</span> 데이터 한눈에 보기
                     </button>
+                    <!-- 하드카본 분석 드롭다운: 하드카본 소재 특유의 저장 메커니즘 분석(Slope/Plateau) 묶음.
+                         data-tab 그대로 유지 — 범용 탭 전환 로직(initTabs)이 그대로 동작한다. -->
+                    <div class="special-menu" id="hcAnalysisMenu">
+                        <button class="tab-btn special-menu-trigger" id="btnHcAnalysisMenu">
+                            <span class="material-icons-round">grain</span> 하드카본 분석
+                            <span class="material-icons-round special-menu-caret">expand_more</span>
+                        </button>
+                        <div class="special-menu-items" id="hcAnalysisMenuItems">
+                            <button class="tab-btn" data-tab="tab-slope-plateau">
+                                <span class="material-icons-round">show_chart</span> Slope / Plateau
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </header>
 
@@ -1000,7 +1010,7 @@
          기능별 분리 모듈 (클래식 스크립트) — 로딩 순서 반드시 유지
          전역(window) 스코프를 공유하므로 순서를 바꾸면 동작이 깨질 수 있습니다.
          ============================================================ -->
-    <script src="js/01-core.js?v=3.1.1"></script>
+    <script src="js/01-core.js?v=3.1.2"></script>
     <script src="js/02-file-upload.js?v=5.1.0"></script>
     <script src="js/03-analysis-controls.js?v=3.0.0"></script>
     <script src="js/04-database.js?v=3.0.0"></script>

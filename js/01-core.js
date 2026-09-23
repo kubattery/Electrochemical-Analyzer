@@ -168,19 +168,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     initRateToggle(); // C-rate 모드 전환 이벤트 초기화
     initDatasetLibrary(); // 데이터셋 라이브러리 이벤트 초기화
 
-    // 특수분석 드롭다운(CV·GITT) 열기/닫기
-    //   하위 버튼(btnTabCV/btnTabGitt)의 탭 전환은 17-cv.js/21-gitt.js 가 처리하고,
-    //   여기서는 메뉴 컨테이너의 열림 상태만 관리한다. 항목 클릭·바깥 클릭 시
-    //   이벤트가 document까지 버블되어 자동으로 닫힌다.
-    const specialMenu = document.getElementById('specialMenu');
-    const btnSpecialMenu = document.getElementById('btnSpecialMenu');
-    if (specialMenu && btnSpecialMenu) {
-        btnSpecialMenu.addEventListener('click', (e) => {
+    // 헤더 드롭다운 메뉴 열기/닫기 (특수분석: CV·GITT / 하드카본 분석: Slope-Plateau 등)
+    //   하위 버튼의 탭 전환은 각 모듈(17-cv.js/21-gitt.js) 또는 범용 initTabs() 가 처리하고,
+    //   여기서는 메뉴 컨테이너의 열림 상태만 공통으로 관리한다. .special-menu 클래스를 가진
+    //   드롭다운은 몇 개가 있든 자동으로 처리되므로, 새 드롭다운 추가 시 이 코드는 안 건드려도 된다.
+    //   하나를 열면 나머지는 닫히고, 항목 클릭·바깥 클릭 시 이벤트가 document까지 버블되어
+    //   자동으로 닫힌다.
+    const headerMenus = document.querySelectorAll('.special-menu');
+    headerMenus.forEach(menu => {
+        const trigger = menu.querySelector('.special-menu-trigger');
+        if (!trigger) return;
+        trigger.addEventListener('click', (e) => {
             e.stopPropagation();
-            specialMenu.classList.toggle('open');
+            const wasOpen = menu.classList.contains('open');
+            headerMenus.forEach(m => m.classList.remove('open'));
+            if (!wasOpen) menu.classList.add('open');
         });
-        document.addEventListener('click', () => specialMenu.classList.remove('open'));
-    }
+    });
+    document.addEventListener('click', () => headerMenus.forEach(m => m.classList.remove('open')));
 
     // 최초 로드 시 기본 분석 모드 UI 정렬 수행 (탭 숨김, 사이드바 정렬 등)
     setAnalysisMode('general');

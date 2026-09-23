@@ -1761,6 +1761,11 @@ select option {
     background: rgba(255, 255, 255, 0.01);
     border: 1px solid rgba(255, 255, 255, 0.05);
     overflow: hidden;
+    /* [버그 수정] .dataset-list(flex column)의 자식인데 overflow:hidden 때문에
+       브라우저가 자동으로 min-height:0을 적용해, 목록이 길어지면 스크롤되는 대신
+       모든 그룹이 320px 박스 안에 강제로 찌그러져 들어갔다. flex-shrink:0으로
+       각 그룹이 원래 높이를 유지하게 하여, 넘치는 만큼 부모가 정상적으로 스크롤되게 한다. */
+    flex-shrink: 0;
 }
 
 .sample-group-header {

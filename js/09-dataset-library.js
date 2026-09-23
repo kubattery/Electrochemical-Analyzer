@@ -464,20 +464,19 @@ function renderDatasetLibraryUI() {
     // 그룹 정렬: 각 그룹 내에서 가장 최근 데이터셋(datasets[0].id)을 가진 그룹이 위로 오도록 정렬
     groups.sort((a, b) => b.datasets[0].id.localeCompare(a.datasets[0].id));
     
-    // 3. localStorage에 저장된 펼침 그룹 목록 로드
-    // 만약 로컬스토리지에 데이터가 없으면, 모든 그룹을 펼침 목록으로 기본 지정
-    let expandedGroups = localStorage.getItem('hc_expanded_sample_groups');
-    if (expandedGroups === null) {
-        expandedGroups = groups.map(g => g.sampleName);
-        localStorage.setItem('hc_expanded_sample_groups', JSON.stringify(expandedGroups));
-    } else {
-        expandedGroups = JSON.parse(expandedGroups);
-    }
-    
+    // 3. localStorage에 저장된 "수동으로 접은" 그룹 목록 로드
+    //    [버그 수정] 예전에는 "펼친 그룹" 목록을 화이트리스트로 저장했는데, 그 목록은
+    //    최초 저장 시점의 샘플명으로 한 번만 채워진다. 그 뒤 새 파일을 올려 새 샘플
+    //    그룹이 생기면 이 목록에 없으니 항상 "접힘" 상태로 렌더링되어, 새로 추가한
+    //    데이터셋이 안 보이는 것처럼 보였다(스크롤할 내용 자체가 없어짐).
+    //    → 반대로 "직접 접은 그룹"만 블랙리스트로 저장해, 목록에 없는(=새로 생긴)
+    //      그룹은 항상 펼침 상태로 시작하게 바꾼다.
+    const collapsedGroups = JSON.parse(localStorage.getItem('hc_collapsed_sample_groups')) || [];
+
     // 4. DOM 렌더링
     groups.forEach(group => {
         const sName = group.sampleName;
-        const isExpanded = expandedGroups.includes(sName);
+        const isExpanded = !collapsedGroups.includes(sName);
         
         const groupContainer = document.createElement('div');
         groupContainer.className = 'sample-group-container';
@@ -525,13 +524,13 @@ function renderDatasetLibraryUI() {
         // 헤더 클릭 이벤트 (아코디언 토글)
         header.addEventListener('click', (e) => {
             if (e.target.closest('.ds-inline-edit-icon')) return; // 수정 아이콘 클릭 시 아코디언 토글 방지
-            let list = JSON.parse(localStorage.getItem('hc_expanded_sample_groups')) || [];
+            let list = JSON.parse(localStorage.getItem('hc_collapsed_sample_groups')) || [];
             if (list.includes(sName)) {
-                list = list.filter(name => name !== sName);
+                list = list.filter(name => name !== sName); // 다시 펼침 → 블랙리스트에서 제거
             } else {
-                list.push(sName);
+                list.push(sName); // 접음 → 블랙리스트에 추가
             }
-            localStorage.setItem('hc_expanded_sample_groups', JSON.stringify(list));
+            localStorage.setItem('hc_collapsed_sample_groups', JSON.stringify(list));
             renderDatasetLibraryUI();
         });
         

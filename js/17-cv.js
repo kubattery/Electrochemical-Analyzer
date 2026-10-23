@@ -672,7 +672,47 @@
       dispRate: dispRate, capCurve: capCurve, totCurve: totCurve
     };
   }
-
+  // [신규] 사용자가 설정한 전압 구간마다 b-value 산출.
+  //   각 구간에서 scan rate별 피크전류 ip 를 뽑아 log(ip) = b·log(v) + const 회귀 → 기울기 b.
+  //   b≈0.5 확산지배, b≈1.0 표면/용량성. 구간 type(산화/환원/둘 다)에 따라 해당 피크만 계산.
+  //   스캔레이트 제외(_k1k2.excluded)는 k1/k2와 동일하게 반영.
+  function computeBValues(f) {
+    if (!f || !f.rateData) return null;
+    var rd = f.rateData[f.selNum]; if (!rd) return null;
+    var wins = validWindows(); if (!wins.length) return null;
+    function byRateOf(arr) { var m = {}; (arr || []).forEach(function (s) { if (!m[s.rate]) m[s.rate] = s; }); return m; }
+    var A = byRateOf(rd.anodic), Cx = byRateOf(rd.cathodic);
+    function ratesOf(m) { return Object.keys(m).map(parseFloat).filter(function (r) { return !_k1k2.excluded[r]; }).sort(function (a, b) { return a - b; }); }
+    // 구간 [lo,hi] 안의 피크전류(rate별). wantMax=true → 산화(+I 최대), false → 환원(-I 최소)
+    function peakInWin(sg, lo, hi, wantMax) {
+      var best = null, p;
+      for (p = 0; p < sg.V.length; p++) {
+        var v = sg.V[p], i = sg.I[p]; if (v < lo || v > hi) continue;
+        if (wantMax) { if (i > 0 && (best === null || i > best)) best = i; }
+        else { if (i < 0 && (best === null || i < best)) best = i; }
+      }
+      return best;
+    }
+    // log(ip) vs log(v) 선형 회귀 → { b, r2, n, points:[{v,ip}] }
+    function fitB(m, lo, hi, wantMax) {
+      var rs = ratesOf(m), xs = [], ys = [], pts = [];
+      rs.forEach(function (r) { var ip = peakInWin(m[r], lo, hi, wantMax); if (ip !== null && ip !== 0) { xs.push(Math.log(r)); ys.push(Math.log(Math.abs(ip))); pts.push({ v: r, ip: ip }); } });
+      if (xs.length < 2) return null;
+      var n = xs.length, mx = 0, my = 0, i; for (i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; } mx /= n; my /= n;
+      var num = 0, den = 0, sst = 0; for (i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) * (xs[i] - mx); sst += (ys[i] - my) * (ys[i] - my); }
+      if (!den) return null;
+      var b = num / den, inter = my - b * mx, ssr = 0; for (i = 0; i < n; i++) { var pred = b * xs[i] + inter; ssr += (ys[i] - pred) * (ys[i] - pred); }
+      var r2 = sst > 0 ? 1 - ssr / sst : 1;
+      return { b: b, r2: r2, n: n, points: pts };
+    }
+    return wins.map(function (w) {
+      return {
+        min: w.min, max: w.max, type: w.type,
+        anodic: (w.type !== 'cathodic') ? fitB(A, w.min, w.max, true) : null,
+        cathodic: (w.type !== 'anodic') ? fitB(Cx, w.min, w.max, false) : null
+      };
+    });
+  }
   function currentK1K2File() {
     var i;
     if (_k1k2.fileId) { for (i = 0; i < cvFiles.length; i++) if (cvFiles[i].id === _k1k2.fileId) return cvFiles[i]; }
@@ -746,8 +786,31 @@
     var rowsHtml = out.contribution.map(function (x) {
       return '<tr><td style="padding:3px 6px;">' + x.rate + ' mV/s</td><td style="padding:3px 6px;">' + x.pct.toFixed(1) + ' %</td><td style="padding:3px 6px;color:#9ca3af;">' + (100 - x.pct).toFixed(1) + ' %</td></tr>';
     }).join('');
+
+    // 구간별 b-value (피크 검출 전압 구간을 설정했을 때). 없으면 전체 피크 b 한 줄만.
+    var bWins = computeBValues(f);
+    var bHtml;
+    if (bWins && bWins.length) {
+      function bCell(res2) {
+        if (!res2) return '<span style="color:#6b7280;">값 부족(점 2개 이상 필요)</span>';
+        return '<b>' + res2.b.toFixed(3) + '</b> <span style="color:#9ca3af;">(R²=' + res2.r2.toFixed(3) + ', n=' + res2.n + ')</span>';
+      }
+      var bRows = '';
+      bWins.forEach(function (r) {
+        var range = r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V';
+        if (r.type !== 'cathodic') bRows += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#f59e0b;font-weight:600;">산화 (Anodic)</td><td style="padding:3px 6px;">' + bCell(r.anodic) + '</td></tr>';
+        if (r.type !== 'anodic') bRows += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#60a5fa;font-weight:600;">환원 (Cathodic)</td><td style="padding:3px 6px;">' + bCell(r.cathodic) + '</td></tr>';
+      });
+      bHtml = '<div style="font-size:12px;margin-bottom:4px;font-weight:600;">구간별 b-value <span style="color:#9ca3af;font-weight:400;">(log Ipeak vs log v 기울기 · 0.5≈확산 · 1.0≈표면/용량성)</span></div>'
+        + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;"><thead><tr style="color:#9ca3af;text-align:left;border-bottom:1px solid rgba(255,255,255,0.12);">'
+        + '<th style="padding:3px 6px;">전압 구간</th><th style="padding:3px 6px;">종류</th><th style="padding:3px 6px;">b-value</th></tr></thead><tbody>'
+        + bRows + '</tbody></table>';
+    } else {
+      bHtml = '<div style="font-size:12px;margin-bottom:6px;">b-value (peak, ' + (_k1k2.branch === 'cathodic' ? '환원' : '산화') + '): <b>' + (out.bVal != null ? out.bVal.toFixed(3) : '-') + '</b> <span style="color:#9ca3af;">(0.5≈확산지배 · 1.0≈표면/용량성) · 피크 검출 전압 구간을 설정하면 구간별 b-value가 표시됩니다.</span></div>';
+    }
+
     res.innerHTML = chips
-      + '<div style="font-size:12px;margin-bottom:6px;">b-value (peak, ' + (_k1k2.branch === 'cathodic' ? '환원' : '산화') + '): <b>' + (out.bVal != null ? out.bVal.toFixed(3) : '-') + '</b> <span style="color:#9ca3af;">(0.5≈확산지배 · 1.0≈표면/용량성)</span></div>'
+      + bHtml
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="color:#9ca3af;text-align:left;border-bottom:1px solid rgba(255,255,255,0.12);">'
       + '<th style="padding:3px 6px;">Scan rate</th><th style="padding:3px 6px;color:#f59e0b;">Capacitive</th><th style="padding:3px 6px;color:#60a5fa;">Diffusion</th></tr></thead><tbody>'
       + rowsHtml + '</tbody></table>' + warn;

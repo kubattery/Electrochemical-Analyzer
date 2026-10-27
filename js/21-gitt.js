@@ -1,5 +1,12 @@
 /* ============================================================================
- * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.6.1)
+ * HC-Analyzer  ·  js/21-gitt.js   (GITT 분석 · 독립 모듈 · v1.7.0)
+ *
+ * [v1.7.0] ΔEt 산출 방식을 √t 피팅(10~80% τ, IR 제외) 하나로 고정:
+ *          v1.6.0의 "ΔEt" 셀렉트(√t 피팅 / E_τ−E₀)를 제거. E_τ−E₀(IR 포함)는
+ *          엑셀 수동 계산과 맞춰 보려고 남겨둔 옵션이었으나, 문헌 표준이 √t
+ *          피팅이므로 일반 케이스로 통일. "x축 E₀" 체크박스는 그대로 유지.
+ *          E_τ−E₀ 값은 테이블 ΔEt 셀 툴팁과 xlsx 내보내기(dEt_raw_V 컬럼)에
+ *          참고용으로만 남긴다. localStorage의 gittDeltaMode 키는 더 이상 읽지 않음.
  *
  * [v1.6.1] 확산계수 차트 x축을 E_eq로 고정(기본)하고, E₀ 전환은 작은 체크박스로:
  *          선행 문헌(Weppner–Huggins 1977, Kim et al. 2022 JECST, Nat. Commun.
@@ -110,12 +117,10 @@
     var gittCombinedSel = {};  // 종합 모드 선택 상태 (id → false만 기록, 기본 선택)
     var gittCycleNo = 1;       // 확산계수 차트·테이블에 표시할 사이클 번호 (1부터)
 
-    // ---- ΔEt 산출 방식 / x축 전압 (확산계수 카드 셀렉트, localStorage 유지) ----
-    //   gittDeltaMode: 'fit' = √t 선형 피팅 기울기 × √τ (10~80% 구간, IR 제외)
-    //                  'raw' = E_τ − E₀ (IR 포함, v1.5.x 까지의 방식)
-    //   gittXMode    : 'eq'  = E_eq (펄스 후 휴지 끝)  /  'e0' = E₀ (펄스 직전 휴지 끝)
+    // ---- ΔEt 산출 / x축 전압 ----
+    //   ΔEt = √t 선형 피팅 기울기 × √τ (FIT_WIN_LO~FIT_WIN_HI 구간, IR 제외) 로 고정 (v1.7.0)
+    //   gittXMode : 'eq' = E_eq (펄스 후 휴지 끝) / 'e0' = E₀ (펄스 직전 휴지 끝), localStorage 유지
     var FIT_WIN_LO = 0.1, FIT_WIN_HI = 0.8;
-    var gittDeltaMode = readPref('gittDeltaMode', 'fit', ['fit', 'raw']);
     var gittXMode = readPref('gittXMode', 'eq', ['eq', 'e0']);
     function readPref(key, def, allowed) {
         try { var v = localStorage.getItem(key); if (v && allowed.indexOf(v) >= 0) return v; } catch (e) {}
@@ -142,10 +147,9 @@
         return { slope: slope, dEtFit: slope * Math.sqrt(tau), nFit: n };
     }
 
-    // 현재 방식의 ΔEt (없으면 null → D 미계산)
+    // D 계산에 쓰는 ΔEt = √t 피팅값 (피팅 불가·0이면 null → D 미계산)
     function usedDEt(p) {
-        if (gittDeltaMode === 'fit') return (p.dEtFit != null && Math.abs(p.dEtFit) > 1e-9) ? p.dEtFit : null;
-        return (p.dEt != null && Math.abs(p.dEt) > 1e-9) ? p.dEt : null;
+        return (p.dEtFit != null && Math.abs(p.dEtFit) > 1e-9) ? p.dEtFit : null;
     }
     function xVoltage(p) { return gittXMode === 'e0' ? p.E0 : p.E_eq; }
 
@@ -808,7 +812,7 @@
                 var factor = ((f.params.Ld / 1000.0) * f.params.Vm) / f.params.Mb; // mg→g 환산, factor = 유효 두께 L (cm)
                 var factorSq = factor * factor;
                 f.pulses.forEach(function (p) {
-                    // D = (4/πτ)·L²·(ΔEs/ΔEt)²  — ΔEt 는 현재 선택 방식(√t 피팅 / E_τ−E₀)
+                    // D = (4/πτ)·L²·(ΔEs/ΔEt)²  — ΔEt 는 √t 피팅값 (IR 제외)
                     var dEt = usedDEt(p);
                     if (dEt == null || !(p.tau > 0)) { p.D = null; p.logD = null; return; }
                     p.D = (4 / (Math.PI * p.tau)) * Math.pow(p.dEs / dEt, 2) * factorSq;
@@ -827,9 +831,7 @@
             var f2 = displayedGittFile();
             if (f2 && validParams(f2.params)) {
                 var L = ((f2.params.Ld / 1000.0) * f2.params.Vm) / f2.params.Mb;
-                var dEtDesc = gittDeltaMode === 'fit'
-                    ? 'ΔEt = (dE/d√t)·√τ, 피팅 구간 ' + Math.round(FIT_WIN_LO * 100) + '~' + Math.round(FIT_WIN_HI * 100) + '% τ'
-                    : 'ΔEt = E_τ − E₀ (IR 포함)';
+                var dEtDesc = 'ΔEt = (dE/d√t)·√τ, 피팅 구간 ' + Math.round(FIT_WIN_LO * 100) + '~' + Math.round(FIT_WIN_HI * 100) + '% τ';
                 hint.textContent = 'D = (4/πτ)·(Loading·V_M/M_B)²·(ΔEs/ΔEt)² · ' + dEtDesc + ' · ' + shortName(f2.name) +
                     ' 유효 두께 L = ' + (L * 1e4).toFixed(2) + ' µm';
             } else {
@@ -949,31 +951,20 @@
         $('gittCyclePrev').addEventListener('click', function () { moveGittCycle(-1); });
         $('gittCycleNext').addEventListener('click', function () { moveGittCycle(1); });
 
-        // ΔEt 방식 셀렉트 · x축 E₀ 체크박스 (사이클 페이저 오른쪽)
+        // x축 E₀ 체크박스 (사이클 페이저 오른쪽)
         //   x축은 E_eq(완화 후 평형전위)가 문헌 표준이라 기본값. 체크하면 E₀로 전환.
-        var selStyle = 'background:rgba(255,255,255,0.06); border:1px solid var(--border-color); border-radius:6px;' +
-            ' color:#fff; font-size:11px; height:24px; padding:0 6px; cursor:pointer;';
+        //   (ΔEt 방식 셀렉트는 v1.7.0에서 제거 — √t 피팅으로 고정)
         var opts = document.createElement('div');
         opts.id = 'gittCalcOpts';
         opts.style.cssText = 'display:flex; align-items:center; gap:6px; font-size:10px; color:var(--text-muted);';
         opts.innerHTML =
-            '<span>ΔEt</span>' +
-            '<select id="gittDeltaMode" title="확산계수 계산에 쓰는 ΔEt 정의" style="' + selStyle + '">' +
-                '<option value="fit">√t 피팅 (10~80%)</option>' +
-                '<option value="raw">E_τ − E₀ (IR 포함)</option>' +
-            '</select>' +
             '<label title="기본은 E_eq(완화 후 평형전위). 체크하면 x축을 펄스 직전 전압 E₀로 표시"' +
                 ' style="display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-left:4px; user-select:none;">' +
                 '<input type="checkbox" id="gittXModeE0" style="width:12px; height:12px; margin:0; cursor:pointer;">' +
                 '<span>x축 E₀</span>' +
             '</label>';
         wrap.appendChild(opts);
-        $('gittDeltaMode').value = gittDeltaMode;
         $('gittXModeE0').checked = (gittXMode === 'e0');
-        $('gittDeltaMode').addEventListener('change', function () {
-            gittDeltaMode = this.value; writePref('gittDeltaMode', gittDeltaMode);
-            calcDiffusion(); renderDiffusionChart(); renderSummaryTable();
-        });
         $('gittXModeE0').addEventListener('change', function () {
             gittXMode = this.checked ? 'e0' : 'eq'; writePref('gittXMode', gittXMode);
             renderDiffusionChart();
@@ -1418,8 +1409,8 @@
                 '<td style="padding:5px 8px;">' + p.E0.toFixed(4) + '</td>' +
                 '<td style="padding:5px 8px;">' + p.E_tau.toFixed(4) + '</td>' +
                 '<td style="padding:5px 8px;">' + p.E_eq.toFixed(4) + '</td>' +
-                // ΔEt 열 = 현재 선택 방식의 값 (√t 피팅이면 툴팁에 E_τ−E₀ 병기)
-                '<td style="padding:5px 8px;"' + (gittDeltaMode === 'fit' ? ' title="E_τ−E₀ = ' + p.dEt.toFixed(4) + ' V"' : '') + '>' +
+                // ΔEt 열 = √t 피팅값 (툴팁에 E_τ−E₀ 참고 병기)
+                '<td style="padding:5px 8px;" title="E_τ−E₀ = ' + p.dEt.toFixed(4) + ' V (IR 포함, 참고)">' +
                     (usedDEt(p) != null ? usedDEt(p).toFixed(4) : '-') + '</td>' +
                 '<td style="padding:5px 8px;">' + p.dEs.toFixed(4) + '</td>' +
                 '<td style="padding:5px 8px; font-family:monospace;">' + (p.D != null ? p.D.toExponential(3) : '-') + '</td>' +
@@ -1438,7 +1429,7 @@
         var header = ['Mode', 'Cycle', 'Run', 'PulseNo', 'tau_s', 'E0_V', 'E_tau_V', 'E_eq_V',
             'dEt_raw_V', 'dEt_fit_V', 'slope_V_sqrt_s', 'dEs_V', 'dEt_method', 'D_cm2_s', 'log10D'];
         if (gittCombined) header.unshift('File');
-        var methodLabel = gittDeltaMode === 'fit' ? 'sqrt_t_fit_' + Math.round(FIT_WIN_LO * 100) + '-' + Math.round(FIT_WIN_HI * 100) + '%' : 'E_tau-E0';
+        var methodLabel = 'sqrt_t_fit_' + Math.round(FIT_WIN_LO * 100) + '-' + Math.round(FIT_WIN_HI * 100) + '%';
         var data = [header];
         files.forEach(function (f) {
             f.pulses.forEach(function (p) {

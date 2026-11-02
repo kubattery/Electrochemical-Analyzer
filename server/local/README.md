@@ -23,7 +23,7 @@ http://localhost:8080/api/ai    AI 중계 (해석 창이 부르는 곳)
 로컬에 로그인된 CLI에 질문을 넘기고 답을 받아옵니다. **추가 비용이 없습니다.**
 
 ```
-웹 채팅 → /api/ai → claude -p (또는 codex exec) → 답변 → 웹 채팅
+웹 채팅 → /api/ai → codex / claude → 답변 → 웹 채팅
 ```
 
 두 CLI 모두 비대화형 실행을 공식 기능으로 제공합니다. 본인이 본인 기기에서
@@ -34,10 +34,36 @@ http://localhost:8080/api/ai    AI 중계 (해석 창이 부르는 곳)
 붙어 다른 PC에서 닿지 않습니다. 글로만 적지 않고 동작으로 묶어 둔 것입니다.
 `ALLOW_LAN=1`로 풀 수는 있게 두었지만 그때는 본인 판단입니다.
 
-| | 설치 | 로그인 | 환경변수 |
-| --- | --- | --- | --- |
-| Claude | `npm i -g @anthropic-ai/claude-code` | `claude` 실행 후 안내대로 | `AI_CLI=claude` |
-| Codex | `npm i -g @openai/codex` | `codex login` | `AI_CLI=codex` |
+| `AI_CLI` | 방식 | 설치 · 로그인 |
+| --- | --- | --- |
+| **`codex-app`** | **App Server를 띄워 두고 JSON-RPC** (권장) | `npm i -g @openai/codex` · `codex login` |
+| `codex` | `codex exec` — 질문마다 새 프로세스 | 같음 |
+| `claude` | `claude -p` — 질문마다 새 프로세스 | `npm i -g @anthropic-ai/claude-code` · `claude` 실행 |
+
+#### codex-app 을 권하는 이유
+
+```
+초기화 1회 → thread/start → turn/start → turn/start → turn/start ...
+             (프로세스는 계속 떠 있고, 대화는 스레드에 남는다)
+```
+
+`codex exec`와 `claude -p`는 질문마다 프로세스를 새로 띄우고 인증을 다시 확인합니다.
+그래서 느립니다. 또 한 번 실행은 한 번의 질문이라 대화가 이어지지 않으므로 지금까지의
+대화를 매번 전부 다시 보내야 합니다.
+
+`codex-app`은 프로세스를 한 번만 띄우고 계속 씁니다. 대화가 스레드에 남아 있어
+이어지는 질문은 **새로 한 말만** 보냅니다.
+
+다만 다음 경우에는 스레드를 새로 엽니다. 잘못 이어서 앞 대화를 중복으로 보내는 것보다
+새로 여는 쪽이 안전하기 때문입니다.
+
+- 데이터셋 선택이 바뀌어 지침이 달라진 경우
+- 대화 앞부분이 이전과 다른 경우 (대화 초기화 등)
+
+왜 새로 열었는지 보려면 `AI_DEBUG=1`을 주고 실행하십시오.
+
+승인 요청은 **거절**합니다. 여기서 하는 일은 글 해석이라 파일을 고치거나 명령을
+돌릴 이유가 없습니다. 샌드박스도 기본 `read-only`이고 `CODEX_SANDBOX`로 바꿀 수 있습니다.
 
 ### (2) API 키 — 여러 사람이 쓰거나 상시 열어 둘 때
 
@@ -56,7 +82,7 @@ Node.js만 있으면 됩니다. 설치할 패키지가 없습니다.
 ```powershell
 # Windows PowerShell — 구독 CLI
 cd $env:USERPROFILE\Documents\Electrochemical-Analyzer
-$env:AI_CLI="claude"
+$env:AI_CLI="codex-app"
 node server/local/server.js
 ```
 
@@ -68,7 +94,7 @@ node server/local/server.js
 
 ```bash
 # Linux / Mac
-AI_CLI=claude node server/local/server.js
+AI_CLI=codex-app node server/local/server.js
 ```
 
 뜨는 주소로 접속하면 됩니다. 시작 배너가 어떤 방식으로 동작 중인지, 어느 PC에서
@@ -89,13 +115,16 @@ GitHub Pages에서 열었다면 전체 주소가 필요합니다. 다만 CLI 모
 
 | 환경변수 | 기본값 | 뜻 |
 | --- | --- | --- |
-| `AI_CLI` | (없음) | `claude` 또는 `codex`. 지정하면 CLI 중계를 씁니다 |
+| `AI_CLI` | (없음) | `codex-app` / `codex` / `claude`. 지정하면 CLI 중계를 씁니다 |
 | `AI_CLI_PATH` | PATH에서 찾음 | CLI 실행파일 경로를 직접 지정 |
-| `AI_CLI_ARGS` | CLI별 기본값 | CLI 플래그를 덮어씁니다 (아래 참고) |
+| `AI_CLI_ARGS` | 방식별 기본값 | CLI 인수를 덮어씁니다 (아래 참고) |
 | `CLI_TIMEOUT_MS` | `180000` | CLI 응답 대기 한도 |
 | `PORT` | `8080` | 포트 |
 | `ALLOW_LAN` | (없음) | `1`이면 CLI 모드에서도 LAN에 엽니다 |
 | `MODEL` | CLI 기본값 | 모델 지정 |
+| `CODEX_EFFORT` | (없음) | `codex-app` 전용. `low` · `medium` · `high` · `xhigh` |
+| `CODEX_SANDBOX` | `read-only` | `codex-app` 전용. 샌드박스 수준 |
+| `AI_DEBUG` | (없음) | `1`이면 스레드를 새로 여는 사유를 찍습니다 |
 
 ## 문제가 생기면
 
@@ -103,29 +132,39 @@ GitHub Pages에서 열었다면 전체 주소가 필요합니다. 다만 CLI 모
 | --- | --- |
 | 배너에 `준비 안 됨` | CLI가 설치되지 않았거나 PATH에 없습니다. 위 표의 설치 명령을 쓰거나 `AI_CLI_PATH`로 경로를 직접 지정하십시오 |
 | `180초 안에 오지 않아 중단` | 로그인이 만료되어 CLI가 입력을 기다리는 중일 수 있습니다. 터미널에서 `claude`(또는 `codex`)를 한 번 실행해 확인하십시오 |
-| `빈 답을 돌려주었습니다` | CLI 출력 형식이 바뀐 경우입니다. `AI_CLI_ARGS`로 플래그를 조정할 수 있습니다 |
+| `빈 답을 돌려주었습니다` | CLI 출력 형식이 바뀐 경우입니다. `AI_CLI_ARGS`로 조정할 수 있습니다 |
+| `app-server 가 종료되었습니다` | Codex가 떠 있지 못했습니다. 메시지에 종료 코드와 stderr가 담깁니다. `codex login`을 먼저 확인하십시오 |
+| 매번 스레드를 새로 엶 | 데이터셋 선택이 바뀌면 지침이 달라져 정상입니다. `AI_DEBUG=1`로 사유를 보십시오 |
 | 다른 PC에서 접속 안 됨 | CLI 모드는 의도적으로 이 PC에만 열립니다. 여러 사람이 쓰려면 API 키 방식을 쓰십시오 |
-| 응답이 느림 | CLI는 API보다 느립니다. 해석 창이 경과 초를 표시하므로 멈춘 것과 구분됩니다 |
+| 응답이 느림 | 아래 참고. 해석 창이 경과 초를 표시하므로 멈춘 것과 구분됩니다 |
 
-CLI 플래그가 업데이트로 바뀌면 코드를 고치지 않고 덮어쓸 수 있습니다.
+CLI 인수가 업데이트로 바뀌면 코드를 고치지 않고 덮어쓸 수 있습니다.
 
 ```powershell
 $env:AI_CLI_ARGS="-p --output-format text"
 ```
 
-## 왜 느린가
+## 속도
 
-CLI는 한 번 부를 때마다 프로세스를 새로 띄우고 인증을 확인합니다. 그래서 질문당
-수십 초가 걸립니다. 또 CLI 한 번 실행은 한 번의 질문이라 대화가 이어지지 않으므로,
-서버가 지금까지의 대화를 글로 풀어 매번 함께 넘깁니다. 대화가 길어지면 그만큼
-넘기는 양도 늘어납니다. 빠른 응답이 필요하면 API 키 방식이 낫습니다.
+| 방식 | 질문당 프로세스 | 대화 이어짐 |
+| --- | --- | --- |
+| `codex-app` | 처음 한 번만 | 예 — 새로 한 말만 보냄 |
+| `codex` · `claude` | 매번 새로 | 아니요 — 매번 전부 다시 보냄 |
+| API 키 | 없음 | 해당 없음 |
+
+`codex exec`와 `claude -p`는 부를 때마다 프로세스를 띄우고 인증을 확인해 질문당 수십
+초가 걸립니다. 대화가 길어지면 다시 보내는 양도 함께 늘어납니다. `codex-app`은 두
+비용이 모두 없습니다. 그래도 API 키 방식이 가장 빠릅니다.
 
 ## 안전장치
 
-- 프롬프트는 **stdin으로만** 넘어갑니다. 명령줄에 닿지 않으므로 `&`, `|`, 따옴표가
-  섞인 질문을 해도 명령으로 실행될 여지가 없습니다.
-- 명령줄에 실리는 값은 설정에서 온 것뿐이고, 글자 종류를 좁게 검사합니다.
-- 응답이 없으면 프로세스를 트리째 정리합니다. 남은 프로세스가 쌓이지 않습니다.
+- `codex` · `claude`: 프롬프트는 **stdin으로만** 넘어갑니다. 명령줄에 닿지 않으므로
+  `&`, `|`, 따옴표가 섞인 질문을 해도 명령으로 실행될 여지가 없습니다. 명령줄에
+  실리는 값은 설정에서 온 것뿐이고 글자 종류를 좁게 검사합니다.
+- `codex-app`: 프롬프트는 JSON-RPC 본문으로만 넘어갑니다. 승인 요청은 거절하고
+  샌드박스는 기본 `read-only`입니다.
+- 응답이 없으면 프로세스를 정리합니다. `codex` · `claude`는 트리째 정리하고,
+  `codex-app`은 연결을 버려 다음 질문에서 새로 띄웁니다. 남은 프로세스가 쌓이지 않습니다.
 - 동시 호출은 줄을 세워 하나씩 처리합니다.
 - 저장소 루트 밖 파일 요청은 403으로 막습니다.
 

@@ -13,22 +13,30 @@
  *
  * AI 는 두 방식 중 하나로 쓴다.
  *
- *  (1) 구독 CLI 중계 — AI_CLI=claude 또는 AI_CLI=codex
- *      로컬에 로그인된 CLI 에 질문을 넘기고 답을 받아 온다. 추가 비용이 없다.
- *      혼자 쓰는 경우를 위한 것이며, 그 전제를 동작으로 묶어 두었다.
- *      CLI 모드에서는 서버가 127.0.0.1 에만 붙어 다른 PC 에서 닿지 않는다.
- *      좌석 하나를 여러 사람이 쓰는 공용 중계로 돌리는 것은 구독의 용도가
- *      아니다. ALLOW_LAN=1 로 풀 수는 있게 두었지만 그때는 본인 판단이다.
+ *  (1) 구독 CLI 중계 — 추가 비용이 없다. 혼자 쓰는 경우를 위한 것이며,
+ *      그 전제를 동작으로 묶어 두었다. 이 모드에서는 서버가 127.0.0.1 에만 붙어
+ *      다른 PC 에서 닿지 않는다. 좌석 하나를 여러 사람이 쓰는 공용 중계로 돌리는
+ *      것은 구독의 용도가 아니다. ALLOW_LAN=1 로 풀 수는 있게 두었지만 그때는
+ *      본인 판단이다.
+ *
+ *        AI_CLI=codex-app   Codex App Server. 프로세스를 띄워 두고 JSON-RPC 로
+ *                           주고받는다. 질문마다 새로 띄우지 않아 빠르고, 대화가
+ *                           스레드로 남아 이어지는 질문은 새로 한 말만 보낸다.
+ *                           Codex 를 쓸 수 있으면 이쪽을 권한다.
+ *        AI_CLI=codex       codex exec. 질문마다 프로세스를 새로 띄운다.
+ *        AI_CLI=claude      claude -p. 질문마다 프로세스를 새로 띄운다.
  *
  *  (2) API 키 — GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
  *      여러 사람이 쓰거나 서버를 상시 열어 둘 때는 이쪽이다.
  *      Gemini 는 무료 등급이 있다.
  *
  * 실행:
- *   set AI_CLI=claude && node server/local/server.js             (Windows CMD)
- *   $env:AI_CLI="claude"; node server/local/server.js             (PowerShell)
- *   AI_CLI=claude node server/local/server.js                     (Linux/Mac)
+ *   set AI_CLI=codex-app && node server/local/server.js          (Windows CMD)
+ *   $env:AI_CLI="codex-app"; node server/local/server.js          (PowerShell)
+ *   AI_CLI=codex-app node server/local/server.js                  (Linux/Mac)
  *   $env:GEMINI_API_KEY="..."; node server/local/server.js        (키를 쓸 때)
+ *
+ * AI_DEBUG=1 을 주면 스레드를 새로 여는 사유를 찍는다.
  * ========================================================================== */
 
 import http from 'node:http';
@@ -36,6 +44,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { callCli, cliStatus, CLI_SPECS } from './cli-bridge.js';
+import { askApp, appStatus, stopApp } from './codex-app.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');      // 저장소 루트 = 웹사이트 파일 위치
@@ -60,10 +69,18 @@ const MIME = {
     '.ico': 'image/x-icon', '.woff2': 'font/woff2'
 };
 
-/* 어떤 방식으로 AI 를 부를지 정한다. CLI 를 지정했으면 그쪽이 먼저다. */
+/* 어떤 방식으로 AI 를 부를지 정한다. CLI 를 지정했으면 그쪽이 먼저다.
+   codex-app 은 프로세스를 띄워 두고 JSON-RPC 로 주고받는 방식이라 따로 다룬다. */
 function pickCli() {
     const v = (process.env.AI_CLI || '').trim().toLowerCase();
+    if (v === 'codex-app') return 'codex-app';
     return CLI_SPECS[v] ? v : null;
+}
+
+function isAppMode() { return pickCli() === 'codex-app'; }
+
+function cliInfo(name) {
+    return name === 'codex-app' ? appStatus() : cliStatus(name);
 }
 
 function pickProvider() {
@@ -258,10 +275,10 @@ async function handleAi(req, res) {
     };
 
     if (provider === 'cli') {
-        const st = cliStatus(pickCli());
+        const st = cliInfo(pickCli());
         if (!st.ok) { send(500, { error: st.error }); return; }
     } else if (!provider || !keyFor[provider]) {
-        send(500, { error: '서버에 AI 설정이 없습니다. 구독 CLI 를 쓰려면 AI_CLI=claude 또는 AI_CLI=codex 를, 키를 쓰려면 GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 중 하나를 환경변수로 넣고 다시 실행해 주세요.' });
+        send(500, { error: '서버에 AI 설정이 없습니다. 구독 CLI 를 쓰려면 AI_CLI 에 codex-app / codex / claude 중 하나를, 키를 쓰려면 GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 중 하나를 환경변수로 넣고 다시 실행해 주세요.' });
         return;
     }
 
@@ -274,7 +291,11 @@ async function handleAi(req, res) {
 
     try {
         let out;
-        if (provider === 'cli') out = await callCli(pickCli(), process.env.MODEL || '', system, messages);
+        if (provider === 'cli') {
+            out = isAppMode()
+                ? await askApp(process.env.MODEL || '', system, messages)
+                : await callCli(pickCli(), process.env.MODEL || '', system, messages);
+        }
         else if (provider === 'gemini') out = await callGemini(model, system, messages, maxTokens);
         else if (provider === 'openai') out = await callOpenAI(model, system, messages, maxTokens);
         else if (provider === 'anthropic') out = await callAnthropic(model, system, messages, maxTokens);
@@ -315,7 +336,7 @@ http.createServer((req, res) => {
     const host = bindHost();
     let how = '(설정 없음 — AI 대화 불가)';
     if (cli) {
-        const st = cliStatus(cli);
+        const st = cliInfo(cli);
         how = st.ok ? (st.label + ' 구독 중계  [' + st.bin + ']')
                     : (st.label + ' — 준비 안 됨: ' + st.error);
     } else if (provider) {

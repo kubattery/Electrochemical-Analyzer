@@ -168,7 +168,7 @@ export function extractAnswer(stdout) {
 }
 
 /* ---------------- 프로세스 띄우기 ---------------- */
-function spawnCli(binPath, args) {
+export function spawnCli(binPath, args) {
     const low = binPath.toLowerCase();
     const isBatch = low.endsWith('.cmd') || low.endsWith('.bat');
     if (process.platform === 'win32' && isBatch) {

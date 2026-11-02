@@ -47,10 +47,16 @@ API 키는 이 서버에만 두고, 브라우저에는 서버 주소만 넣습�
 
 ## 배포
 
+> **`server/node_modules`는 지금 없습니다.** 용량이 약 175 MB여서 정리했습니다.
+> `worker.js`가 `@anthropic-ai/sdk`를 import하므로 **다시 배포하기 전에
+> `npm install`을 먼저 실행해야 합니다.** 없으면 번들 단계에서 실패합니다.
+> `package.json`과 `package-lock.json`이 저장소에 있어 같은 버전으로 복원됩니다.
+>
+> 이미 배포돼 돌고 있는 Worker는 영향을 받지 않습니다. 재배포할 때만 필요합니다.
+
 ```bash
 cd server
-npm install @anthropic-ai/sdk
-npm install --save-dev wrangler
+npm install                               # package-lock.json 그대로 복원
 
 npx wrangler login                        # 브라우저에서 Cloudflare 로그인
 npx wrangler secret put GEMINI_API_KEY    # 쓰려는 제공자의 키 하나만 넣습니다

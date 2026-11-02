@@ -2,3 +2,6 @@ node_modules/
 .wrangler/
 .dev.vars
 .dryrun/
+.venv/
+__pycache__/
+*.pyc

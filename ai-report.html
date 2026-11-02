@@ -378,13 +378,14 @@
 
         <div id="aiSettings" style="display:none;">
             <label class="field" for="aiEndpoint">중계 서버 주소</label>
-            <input type="text" id="aiEndpoint" placeholder="https://esmpl-ai-proxy.kubattery.workers.dev 또는 /api/ai" autocomplete="off">
+            <input type="text" id="aiEndpoint" placeholder="비워 두면 자동 (권장)" autocomplete="off">
             <p class="hint">
-                중계 서버 주소입니다. API 키가 아니라 주소만 넣습니다.
-                이 서버에서 웹사이트를 열었다면 <code>/api/ai</code> 처럼 짧게,
-                GitHub Pages 에서 열었다면 <code>http://localhost:8080/api/ai</code> 처럼 전체 주소를 적습니다.
-                어느 AI 가 답하는지는 서버 설정에 달려 있고, 답변이 올 때마다 아래에 이름이 표시됩니다.
-                이 브라우저에만 저장되며, 설정 방법은 저장소의 <code>server/local/README.md</code> 에 있습니다.
+                <strong>비워 두어도 됩니다.</strong> 어느 컴퓨터에서 열든 기본 중계가 바로 답하고,
+                이 PC 에 내부 서버가 떠 있으면 더 나은 모델을 쓰는 그쪽으로 알아서 옮겨탑니다.
+                지금 무엇이 답하고 있는지는 위 배지와, 답변마다 찍히는 완료 줄에 나옵니다.
+                다른 중계를 쓰시려면 그 주소를 여기 적고, 자동으로 되돌리려면 비우고 저장하십시오.
+                이 브라우저에만 저장됩니다. 서버 설정 방법은 저장소의
+                <code>server/local/README.md</code> 에 있습니다.
             </p>
             <div style="margin-top:9px; display:flex; gap:7px;">
                 <button class="btn-primary" id="btnAiSave" type="button" style="padding:7px 13px;">저장</button>
@@ -482,7 +483,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.19.0';
+const POPUP_VERSION = '1.20.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2344,21 +2345,83 @@ let aiEndpoint = '';
 let aiMessages = [];
 let aiBusy = false;
 
-function loadEndpoint() {
-    try { aiEndpoint = localStorage.getItem(AI_ENDPOINT_KEY) || ''; }
-    catch (e) { aiEndpoint = ''; }
-    $('aiEndpoint').value = aiEndpoint;
+/* 어느 컴퓨터에서 열어도 주소를 묻지 않는다.
+ *   · 기본값은 이미 올려 둔 중계다. 설정 없이 바로 답이 온다.
+ *   · 이 PC 에 내부 서버가 떠 있으면 그쪽이 더 좋은 모델을 쓰므로 자동으로 옮겨탄다.
+ * 직접 적어 넣은 주소가 있으면 그것이 언제나 먼저다. */
+const DEFAULT_ENDPOINT = 'https://esmpl-ai-proxy.kubattery.workers.dev';
+const LOCAL_CANDIDATES = [
+    'http://localhost:8080/api/ai',
+    'http://127.0.0.1:8080/api/ai'
+];
+let endpointSource = 'default';   // default | local | manual
+
+/** 내부 서버가 떠 있는지 짧게 물어본다. 없으면 빨리 포기한다. */
+async function probeLocal(url) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1200);
+    try {
+        const r = await fetch(url + '/ping', { signal: ctl.signal });
+        if (!r.ok) return null;
+        const d = await r.json();
+        return (d && d.ok && d.ready) ? d : null;
+    } catch (e) {
+        return null;          // 없는 것이 보통이다. 조용히 넘어간다.
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function autoPickEndpoint() {
+    for (const url of LOCAL_CANDIDATES) {
+        const hit = await probeLocal(url);
+        if (hit) {
+            aiEndpoint = url;
+            endpointSource = 'local';
+            localLabel = hit.label || '내부 서버';
+            updateAiState();
+            return;
+        }
+    }
+    aiEndpoint = DEFAULT_ENDPOINT;
+    endpointSource = 'default';
     updateAiState();
+}
+
+let localLabel = '';
+
+function loadEndpoint() {
+    let saved = '';
+    try { saved = localStorage.getItem(AI_ENDPOINT_KEY) || ''; } catch (e) { saved = ''; }
+    if (saved) {
+        aiEndpoint = saved;
+        endpointSource = 'manual';
+        $('aiEndpoint').value = saved;
+        updateAiState();
+        return;
+    }
+    // 적어 넣은 것이 없으면 기본값으로 먼저 쓸 수 있게 해 두고, 더 좋은 쪽을 찾아본다.
+    aiEndpoint = DEFAULT_ENDPOINT;
+    endpointSource = 'default';
+    $('aiEndpoint').value = '';
+    updateAiState();
+    autoPickEndpoint();
 }
 
 function updateAiState() {
     const badge = $('aiState');
-    if (aiEndpoint) {
-        badge.textContent = '서버 연결됨';
-        badge.className = 'badge badge-ok';
-    } else {
+    if (!aiEndpoint) {
         badge.textContent = '서버 미설정';
         badge.className = 'badge badge-err';
+    } else if (endpointSource === 'local') {
+        badge.textContent = localLabel ? ('내부 서버 · ' + localLabel) : '내부 서버';
+        badge.className = 'badge badge-ok';
+    } else if (endpointSource === 'manual') {
+        badge.textContent = '직접 지정한 서버';
+        badge.className = 'badge badge-ok';
+    } else {
+        badge.textContent = '기본 중계';
+        badge.className = 'badge badge-ok';
     }
     // 중계 서버가 없으면 수동 전달 모드로 바꾼다. 기능을 막지 않고 경로만 바꾼다.
     const manual = aiManualMode();
@@ -2574,10 +2637,21 @@ $('btnAiSave').addEventListener('click', () => {
     if (v && !isUrl && v[0] !== '/') {
         setAiStatus('http:// 로 시작하는 주소이거나 / 로 시작하는 경로여야 합니다.', 'err'); return;
     }
-    aiEndpoint = v;
     try { localStorage.setItem(AI_ENDPOINT_KEY, v); } catch (e) { /* 저장 실패는 무시 */ }
-    updateAiState();
-    setAiStatus(v ? '서버 주소를 저장했습니다.' : '서버 주소를 지웠습니다.', 'ok');
+    if (v) {
+        aiEndpoint = v;
+        endpointSource = 'manual';
+        updateAiState();
+        setAiStatus('이 주소를 쓰도록 저장했습니다.', 'ok');
+    } else {
+        // 비우면 다시 자동으로. 내부 서버가 있으면 그쪽, 없으면 기본 중계.
+        setAiStatus('자동으로 되돌리는 중…', null, true);
+        autoPickEndpoint().then(() => {
+            setAiStatus(endpointSource === 'local'
+                ? '내부 서버를 찾았습니다. 그쪽으로 씁니다.'
+                : '기본 중계로 돌아갔습니다. 설정 없이 바로 쓸 수 있습니다.', 'ok');
+        });
+    }
 });
 
 $('btnAiTest').addEventListener('click', async () => {
@@ -2882,7 +2956,7 @@ function renderMarkdown(src) {
 
 /* ---------------- 시작 ---------------- */
 loadTreatments();
-loadEndpoint();   // 저장해 둔 중계 서버 주소 복원   // 이전에 입력한 개질 정보 복원
+loadEndpoint();   // 직접 지정한 주소가 있으면 그것, 없으면 자동으로 고른다
 requestSnapshot();
 </script>
 </body>

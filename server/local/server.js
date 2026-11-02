@@ -409,6 +409,27 @@ async function handleAi(req, res, cors) {
 http.createServer((req, res) => {
     const url = req.url || '/';
 
+    /* 해석 창이 '여기 중계가 있나' 를 물어 보는 통로. AI 를 부르지 않으므로
+       가볍고, 구독 차례를 쓰지도 않는다. 이게 있어야 창이 주소를 묻지 않고
+       알아서 좋은 쪽을 고를 수 있다. 암호를 요구하지 않는 이유는, 여기서
+       알 수 있는 것이 '중계가 떠 있다' 와 제공자 이름뿐이기 때문이다.
+       실제로 쓰려면 여전히 암호가 필요하다. */
+    if (url.startsWith('/api/ai/ping')) {
+        const cors = corsFor(req);
+        if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+        const cli = pickCli();
+        const st = cli ? cliInfo(cli) : null;
+        res.writeHead(200, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+            ok: true,
+            provider: pickProvider(),
+            label: st ? (st.ok ? st.label : st.label + ' (준비 안 됨)') : (pickProvider() || null),
+            ready: st ? !!st.ok : !!pickProvider(),
+            needsToken: !!aiToken && !isLoopback(req)
+        }));
+        return;
+    }
+
     if (url.startsWith('/api/ai')) {
         const cors = corsFor(req);
         if (req.method === 'OPTIONS') {

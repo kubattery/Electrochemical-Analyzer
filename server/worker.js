@@ -278,23 +278,6 @@ export default {
             return json({ error: 'PROVIDER 가 ' + provider + ' 인데 해당 키가 설정되어 있지 않습니다.' }, 500, cors);
         }
 
-        // [임시 진단] 키 값 자체는 절대 내보내지 않고 모양만 알려 준다.
-        // 원인을 잡은 뒤 이 블록은 제거한다.
-        const url = new URL(request.url);
-        if (url.searchParams.get('diag') === '1') {
-            const k = keyFor[provider] || '';
-            return json({
-                provider: provider,
-                keyLength: k.length,
-                keyPrefix: k.slice(0, 7),
-                keySuffix: k.slice(-4),
-                hasWhitespace: k !== k.trim() || k.indexOf(String.fromCharCode(32)) >= 0,
-                hasNewline: k.indexOf(String.fromCharCode(10)) >= 0 || k.indexOf(String.fromCharCode(13)) >= 0,
-                trimmedLength: k.trim().length,
-                model: env.MODEL || DEFAULT_MODEL[provider]
-            }, 200, cors);
-        }
-
         const raw = await request.text();
         if (raw.length > MAX_BODY_BYTES) return json({ error: '요청이 너무 큽니다.' }, 413, cors);
 

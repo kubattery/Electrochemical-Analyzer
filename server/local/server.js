@@ -390,8 +390,11 @@ http.createServer((req, res) => {
     console.log('    이 서버에서 웹사이트를 열었다면 :  /api/ai');
     console.log('    GitHub Pages 에서 열었다면       :  http://localhost:' + PORT + '/api/ai');
     console.log('');
-    console.log('  허용된 출처: ' + allowedOrigins().join(', '));
-    console.log('  (다른 주소에서 쓰려면 ALLOWED_ORIGINS 환경변수에 쉼표로 적으세요)');
+    console.log('  이 서버를 부를 수 있는 웹사이트');
+    for (const o of allowedOrigins()) console.log('    ' + o);
+    console.log('    목록에 없는 사이트가 부르면 브라우저가 막습니다. 서버가 켜져 있는 동안');
+    console.log('    아무 사이트나 이 중계로 구독을 쓰지 못하게 하려는 것입니다.');
+    console.log('    사이트를 다른 주소에서도 연다면 ALLOWED_ORIGINS 에 쉼표로 적으세요.');
     console.log('');
     if (host === '127.0.0.1') {
         console.log('  이 PC 에서만 접속됩니다. 구독 CLI 중계는 혼자 쓰는 용도이므로');

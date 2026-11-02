@@ -112,14 +112,34 @@ AI_CLI=codex-app node server/local/server.js
 
 ## 해석 창 설정
 
-이 서버에서 웹사이트를 열었다면 **서버 설정**에 짧게 적습니다.
+어디서 웹사이트를 열었는지에 따라 **서버 설정**에 넣을 값이 다릅니다.
 
-```
-/api/ai
-```
+| 웹사이트를 연 곳 | 서버 설정에 넣을 값 |
+| --- | --- |
+| 이 서버 (`http://localhost:8080/`) | `/api/ai` |
+| **GitHub Pages** | `http://localhost:8080/api/ai` |
 
-GitHub Pages에서 열었다면 전체 주소가 필요합니다. 다만 CLI 모드는 `127.0.0.1`에만
-붙어 있어 이 조합이 되지 않습니다. **이 서버에서 웹사이트를 함께 여십시오.**
+### GitHub Pages에서 쓰는 경우
+
+평소 쓰는 주소를 그대로 쓰면서 Codex 구독으로 답을 받을 수 있습니다. 서버는 띄워
+두어야 합니다.
+
+두 가지가 받쳐 줘야 되는데 둘 다 되어 있습니다.
+
+- **혼합 콘텐츠**: `https` 페이지에서 `http`를 부르면 보통 막히지만, 브라우저는
+  `http://localhost`와 `http://127.0.0.1`을 믿을 수 있는 출처로 보아 예외로 둡니다.
+- **CORS**: 서버가 허용 헤더를 보냅니다. 기본으로 `https://kubattery.github.io`와
+  `localhost`만 허용합니다. 다른 주소를 쓰려면 `ALLOWED_ORIGINS`에 쉼표로 적습니다.
+
+`*`로 열지 않은 이유가 있습니다. 그렇게 하면 서버가 떠 있는 동안 **아무 웹사이트나**
+이 중계를 통해 구독을 쓸 수 있습니다. 허용 목록만 둡니다.
+
+서버는 여전히 `127.0.0.1`에만 묶여 있어 **다른 PC에서는 닿지 않습니다.** 브라우저가
+같은 기기에 있으니 이 조합이 성립합니다.
+
+> 서버를 끄면 GitHub Pages 쪽은 연결에 실패합니다. 그때는 서버 설정을 Cloudflare
+> Worker 주소로 되돌리면 서버 없이도 쓸 수 있습니다.
+> `https://esmpl-ai-proxy.kubattery.workers.dev`
 
 ## 설정값
 
@@ -131,6 +151,7 @@ GitHub Pages에서 열었다면 전체 주소가 필요합니다. 다만 CLI 모
 | `CLI_TIMEOUT_MS` | `180000` | CLI 응답 대기 한도 |
 | `PORT` | `8080` | 포트 |
 | `ALLOW_LAN` | (없음) | `1`이면 CLI 모드에서도 LAN에 엽니다 |
+| `ALLOWED_ORIGINS` | Pages + localhost | CORS 허용 출처를 쉼표로 추가 |
 | `MODEL` | CLI 기본값 | 모델 지정 |
 | `CODEX_EFFORT` | (없음) | `codex-app` 전용. `low` · `medium` · `high` · `xhigh` |
 | `CODEX_SANDBOX` | `read-only` | `codex-app` 전용. 샌드박스 수준 |
@@ -147,6 +168,7 @@ GitHub Pages에서 열었다면 전체 주소가 필요합니다. 다만 CLI 모
 | `app-server 가 종료되었습니다` | Codex가 떠 있지 못했습니다. 메시지에 종료 코드와 stderr가 담깁니다. `codex login`을 먼저 확인하십시오 |
 | 매번 스레드를 새로 엶 | 데이터셋 선택이 바뀌면 지침이 달라져 정상입니다. `AI_DEBUG=1`로 사유를 보십시오 |
 | 다른 PC에서 접속 안 됨 | CLI 모드는 의도적으로 이 PC에만 열립니다. 여러 사람이 쓰려면 API 키 방식을 쓰십시오 |
+| GitHub Pages에서 `연결 실패` | 서버가 떠 있는지, 서버 설정이 `http://localhost:8080/api/ai`인지(포트까지) 확인하십시오. 브라우저 개발자도구 콘솔에 CORS 오류가 보이면 `ALLOWED_ORIGINS`에 그 주소를 추가하십시오 |
 | 응답이 느림 | 아래 참고. 해석 창이 경과 초를 표시하므로 멈춘 것과 구분됩니다 |
 
 CLI 인수가 업데이트로 바뀌면 코드를 고치지 않고 덮어쓸 수 있습니다.

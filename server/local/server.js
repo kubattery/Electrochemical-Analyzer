@@ -98,6 +98,38 @@ function bindHost() {
     return pickCli() ? '127.0.0.1' : '0.0.0.0';
 }
 
+/* ---------------- 다른 출처에서 부를 수 있게 ----------------
+ * GitHub Pages 에 올라간 분석기에서 이 서버를 부르려면 CORS 가 열려 있어야 한다.
+ * http://localhost 는 브라우저가 믿을 수 있는 출처로 보기 때문에, https 페이지에서
+ * 불러도 혼합 콘텐츠로 막히지 않는다. 남는 것은 CORS 뿐이다.
+ *
+ * 다만 * 로 열지 않는다. 서버가 떠 있는 동안 아무 웹사이트나 이 중계를 통해
+ * 구독을 쓸 수 있게 되기 때문이다. 허용할 출처만 적는다. */
+const DEFAULT_ORIGINS = [
+    'https://kubattery.github.io',
+    'http://localhost:' + PORT,
+    'http://127.0.0.1:' + PORT
+];
+
+function allowedOrigins() {
+    const extra = (process.env.ALLOWED_ORIGINS || '')
+        .split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
+    return DEFAULT_ORIGINS.concat(extra);
+}
+
+function corsFor(req) {
+    const origin = req.headers.origin;
+    if (!origin) return {};                     // 같은 출처이거나 브라우저가 아닌 호출
+    if (allowedOrigins().indexOf(origin.replace(/\/+$/, '')) < 0) return {};
+    return {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
+        'Vary': 'Origin'
+    };
+}
+
 /** 응답 본문을 글자로 먼저 읽고 JSON 으로 해석한다. 빈 응답이나 HTML 오류 페이지에서
     사유를 잃지 않기 위해서다. */
 async function readJson(res, who) {
@@ -242,13 +274,13 @@ function serveStatic(req, res, urlPath) {
 }
 
 /* ---------------- AI 중계 ---------------- */
-async function handleAi(req, res) {
+async function handleAi(req, res, cors) {
     const chunks = [];
     let size = 0;
     for await (const c of req) {
         size += c.length;
         if (size > MAX_BODY_BYTES) {
-            res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.writeHead(413, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ error: '요청이 너무 큽니다.' }));
             return;
         }
@@ -258,7 +290,7 @@ async function handleAi(req, res) {
     let body;
     try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
     catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.writeHead(400, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: '본문이 올바른 JSON 이 아닙니다.' }));
         return;
     }
@@ -270,7 +302,7 @@ async function handleAi(req, res) {
         anthropic: process.env.ANTHROPIC_API_KEY
     };
     const send = (code, obj) => {
-        res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.writeHead(code, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(obj));
     };
 
@@ -313,14 +345,18 @@ http.createServer((req, res) => {
     const url = req.url || '/';
 
     if (url.startsWith('/api/ai')) {
-        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+        const cors = corsFor(req);
+        if (req.method === 'OPTIONS') {
+            // 허용하지 않는 출처면 헤더가 비어 브라우저가 알아서 막는다
+            res.writeHead(204, cors); res.end(); return;
+        }
         if (req.method !== 'POST') {
-            res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.writeHead(405, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ error: 'POST 만 허용합니다.' }));
             return;
         }
-        handleAi(req, res).catch(e => {
-            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        handleAi(req, res, cors).catch(e => {
+            res.writeHead(500, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ error: '서버 오류: ' + e.message }));
         });
         return;
@@ -350,8 +386,12 @@ http.createServer((req, res) => {
     console.log('  AI 방식    : ' + how);
     console.log('  파일 위치  : ' + ROOT);
     console.log('');
-    console.log('  해석 창의 [서버 설정] 에 넣을 값:  /api/ai');
-    console.log('  (이 서버에서 웹사이트를 함께 열면 주소를 길게 적을 필요가 없습니다)');
+    console.log('  해석 창의 [서버 설정] 에 넣을 값');
+    console.log('    이 서버에서 웹사이트를 열었다면 :  /api/ai');
+    console.log('    GitHub Pages 에서 열었다면       :  http://localhost:' + PORT + '/api/ai');
+    console.log('');
+    console.log('  허용된 출처: ' + allowedOrigins().join(', '));
+    console.log('  (다른 주소에서 쓰려면 ALLOWED_ORIGINS 환경변수에 쉼표로 적으세요)');
     console.log('');
     if (host === '127.0.0.1') {
         console.log('  이 PC 에서만 접속됩니다. 구독 CLI 중계는 혼자 쓰는 용도이므로');

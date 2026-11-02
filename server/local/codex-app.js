@@ -178,6 +178,12 @@ class AppServer {
     }
 
     onNotify(method, p) {
+        /* 어떤 모델이 답하는지는 thread/started 에만 실려 온다. 턴이 시작되기 전에
+           오므로 아래 턴 검사보다 먼저 집어 둔다. 화면에 그대로 보여 준다. */
+        if (method === 'thread/started' && p.thread && p.thread.model) {
+            this.model = p.thread.model;
+            if (p.thread.reasoningEffort) this.effort = p.thread.reasoningEffort;
+        }
         const t = this.turn;
         if (!t) return;
         if (p.turnId && t.turnId && p.turnId !== t.turnId) return;
@@ -367,9 +373,12 @@ export function askApp(model, system, messages) {
         thread.messages = messages.concat([{ role: 'assistant', content: text }]);
         return {
             text,
-            model: model || '(Codex 기본값)',
+            // 서버가 알려 준 실제 모델을 먼저 쓴다. 지정한 적 없어도 무엇이 답했는지 보인다.
+            model: c.model || model || '(Codex 기본값)',
             cli: 'codex-app',
-            label: 'Codex App Server' + (resume ? ' · 대화 이어받음' : ''),
+            label: 'Codex' + (c.model ? ' ' + c.model : ' App Server')
+                + (c.effort ? ' · ' + c.effort : '')
+                + (resume ? ' · 대화 이어받음' : ''),
             threadId: thread.id
         };
     });

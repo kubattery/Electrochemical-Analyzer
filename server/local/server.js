@@ -122,6 +122,53 @@ function allowedOrigins() {
     return DEFAULT_ORIGINS.concat(lan).concat(extra);
 }
 
+/* ---------------- 바깥에서 들어올 때의 암호 ----------------
+ * LAN 에 열면 주소를 아는 누구나 이 중계로 구독을 쓸 수 있다. 특히 이 기기의
+ * 주소가 사설 IP 가 아니라 공인 IP 면 교내망을 넘어 닿을 수도 있다. 그래서
+ * 이 PC 밖에서 들어오는 요청에는 암호를 요구한다.
+ *
+ * 127.0.0.1 에서 오는 요청은 그대로 통과시킨다. 본인 기기에서 쓰는 길을
+ * 번거롭게 만들 이유가 없고, 거기까지 왔다면 이미 이 PC 를 쓰고 있는 것이다. */
+let aiToken = (process.env.AI_TOKEN || '').trim();
+
+function ensureToken() {
+    if (bindHost() !== '0.0.0.0') return '';
+    if (!aiToken) {
+        // 지정하지 않았으면 만들어 준다. 열어 두고 무방비인 것보다 낫다.
+        aiToken = Array.from({ length: 24 },
+            () => 'abcdefghijkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 32)]).join('');
+    }
+    return aiToken;
+}
+
+function isLoopback(req) {
+    const a = (req.socket && req.socket.remoteAddress) || '';
+    return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+/** 통과시켜도 되는 요청인지. 통과면 null, 아니면 막을 사유. */
+function tokenProblem(req) {
+    if (!aiToken) return null;            // 암호를 안 쓰는 모드
+    if (isLoopback(req)) return null;     // 이 PC 안에서 온 요청
+    const q = (req.url || '').split('?')[1] || '';
+    const given = new URLSearchParams(q).get('t')
+        || req.headers['x-ai-token'] || '';
+    if (given === aiToken) return null;
+    return '이 서버는 바깥에서 들어올 때 암호를 요구합니다. 서버 창에 적힌 주소를 '
+        + '(끝의 ?t=... 까지) 그대로 [서버 설정] 에 넣어 주세요.';
+}
+
+/** 사설 대역인지. 아니면 인터넷에 그대로 드러날 수 있는 주소다. */
+function isPrivateIp(ip) {
+    const p = ip.split('.').map(Number);
+    if (p.length !== 4) return false;
+    if (p[0] === 10) return true;
+    if (p[0] === 192 && p[1] === 168) return true;
+    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
+    if (p[0] === 169 && p[1] === 254) return true;
+    return false;
+}
+
 /* 같은 네트워크에서 쓸 때 안내할 주소. 다른 PC 에서는 서버의 IP 로 들어와야 하는데
    그 값을 사람이 ipconfig 로 찾게 두면 번거롭다. */
 function lanAddresses() {
@@ -373,6 +420,12 @@ http.createServer((req, res) => {
             res.end(JSON.stringify({ error: 'POST 만 허용합니다.' }));
             return;
         }
+        const denied = tokenProblem(req);
+        if (denied) {
+            res.writeHead(401, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ error: denied }));
+            return;
+        }
         handleAi(req, res, cors).catch(e => {
             res.writeHead(500, { ...cors, 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ error: '서버 오류: ' + e.message }));
@@ -388,6 +441,7 @@ http.createServer((req, res) => {
     const provider = pickProvider();
     const cli = pickCli();
     const host = bindHost();
+    ensureToken();      // LAN 에 열었다면 암호를 준비한다
     let how = '(설정 없음 — AI 대화 불가)';
     if (cli) {
         const st = cliInfo(cli);
@@ -419,18 +473,34 @@ http.createServer((req, res) => {
         console.log('  다른 PC 에 열지 않습니다. 여러 사람이 쓰려면 API 키 방식을 쓰세요.');
         console.log('  내 다른 PC 에서도 쓰려면 ALLOW_LAN=1 을 주고 실행하세요.');
     } else {
-        console.log('  같은 네트워크의 다른 PC 에서 접속할 주소');
         const ips = lanAddresses();
+        console.log('  다른 PC 에서 할 일 — 아래 두 줄이면 됩니다');
         if (ips.length) {
-            for (const ip of ips) console.log('    http://' + ip + ':' + PORT + '/');
+            for (const ip of ips) {
+                console.log('');
+                console.log('    1) 웹사이트를 이 주소로 엽니다');
+                console.log('         http://' + ip + ':' + PORT + '/');
+                console.log('    2) [서버 설정] 에 이 주소를 통째로 넣습니다');
+                console.log('         http://' + ip + ':' + PORT + '/api/ai?t=' + aiToken);
+            }
         } else {
             console.log('    (네트워크 주소를 찾지 못했습니다. ipconfig 로 IPv4 주소를 확인하세요)');
         }
-        console.log('    그 PC 에서는 이 주소로 웹사이트를 여십시오. GitHub Pages 에서');
-        console.log('    이 주소를 부르면 브라우저가 막습니다. https 페이지가 http 를 부르는');
-        console.log('    것은 localhost 만 예외이고 사설 IP 는 예외가 아니기 때문입니다.');
         console.log('');
-        console.log('  외부 인터넷에는 노출하지 마세요. 인증이 없어 주소를 아는 누구나 씁니다.');
+        console.log('  GitHub Pages 에서는 이 주소를 부를 수 없습니다. https 페이지가 http 를');
+        console.log('  부르는 것은 localhost 만 예외이고 사설 IP 는 예외가 아니어서, 브라우저가');
+        console.log('  막습니다. 그래서 1) 처럼 이 서버에서 웹사이트를 열어야 합니다.');
+        console.log('');
+        console.log('  끝의 ?t=... 는 바깥에서 들어올 때의 암호입니다. 이게 없으면 주소를 아는');
+        console.log('  누구나 이 중계로 구독을 씁니다. 암호를 고정하려면 AI_TOKEN 을 주세요.');
+
+        const open = ips.filter(ip => !isPrivateIp(ip));
+        if (open.length) {
+            console.log('');
+            console.log('  [주의] ' + open.join(', ') + ' 는 사설 IP 가 아닙니다.');
+            console.log('  방화벽 설정에 따라 교내망을 넘어 인터넷에서 닿을 수도 있는 주소입니다.');
+            console.log('  쓰지 않을 때는 이 창을 닫아 서버를 꺼 두시는 편이 좋습니다.');
+        }
     }
     console.log('');
 });

@@ -131,13 +131,21 @@ function allowedOrigins() {
  * 번거롭게 만들 이유가 없고, 거기까지 왔다면 이미 이 PC 를 쓰고 있는 것이다. */
 let aiToken = (process.env.AI_TOKEN || '').trim();
 
+/* 만든 암호는 파일에 남겨 다음 실행에도 같은 것을 쓴다. 실행할 때마다 바뀌면
+   다른 PC 에서 매번 주소를 다시 적어야 한다. 한 번 적으면 끝나게 한다. */
+const TOKEN_FILE = path.join(HERE, '.ai-token');
+
 function ensureToken() {
     if (bindHost() !== '0.0.0.0') return '';
-    if (!aiToken) {
-        // 지정하지 않았으면 만들어 준다. 열어 두고 무방비인 것보다 낫다.
-        aiToken = Array.from({ length: 24 },
-            () => 'abcdefghijkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 32)]).join('');
-    }
+    if (aiToken) return aiToken;                 // AI_TOKEN 으로 직접 준 경우
+    try {
+        const saved = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+        if (saved) { aiToken = saved; return aiToken; }
+    } catch (e) { /* 아직 없다 */ }
+    aiToken = Array.from({ length: 24 },
+        () => 'abcdefghijkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 32)]).join('');
+    try { fs.writeFileSync(TOKEN_FILE, aiToken, 'utf8'); }
+    catch (e) { console.log('  (암호를 파일에 남기지 못했습니다. 이번 실행에만 유효합니다)'); }
     return aiToken;
 }
 

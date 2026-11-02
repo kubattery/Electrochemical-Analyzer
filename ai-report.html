@@ -216,6 +216,112 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* ---------- 설치 안내 ---------- */
+        .setup-back {
+            position: fixed;
+            inset: 0;
+            background: rgba(4, 7, 13, 0.78);
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 36px 16px;
+            overflow-y: auto;
+            z-index: 60;
+        }
+        .setup-box {
+            width: 100%;
+            max-width: 620px;
+            background: #111827;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+        }
+        .setup-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .setup-head h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .setup-body { padding: 16px 18px 18px; }
+
+        .setup-step {
+            display: grid;
+            grid-template-columns: 26px 1fr;
+            gap: 0 12px;
+            padding: 12px 0;
+            border-top: 1px solid var(--border-color);
+        }
+        .setup-n {
+            width: 26px;
+            height: 26px;
+            border-radius: 7px;
+            display: grid;
+            place-items: center;
+            background: rgba(59, 130, 246, 0.14);
+            color: var(--color-primary);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .setup-step h4 {
+            margin: 3px 0 5px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .setup-step p {
+            margin: 0 0 7px;
+            font-size: 13px;
+            line-height: 1.65;
+            color: var(--text-muted);
+        }
+        .setup-step p:last-child { margin-bottom: 0; }
+        .setup-warn { color: var(--color-orange) !important; }
+
+        .setup-cmd {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 7px;
+            padding: 7px 8px 7px 10px;
+            margin-bottom: 7px;
+        }
+        .setup-cmd code {
+            flex: 1;
+            min-width: 0;
+            overflow-x: auto;
+            white-space: nowrap;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-main);
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .setup-copy {
+            flex: none;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 11px;
+            padding: 4px 9px;
+            cursor: pointer;
+        }
+        .setup-copy:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.12); }
+        .setup-copy.done { color: var(--color-success); border-color: rgba(16, 185, 129, 0.4); }
+
         /* ---------- 결과 ---------- */
         #outputCard { display: none; }
         .md { font-size: 14px; line-height: 1.78; word-break: break-word; }
@@ -387,10 +493,92 @@
                 이 브라우저에만 저장됩니다. 서버 설정 방법은 저장소의
                 <code>server/local/README.md</code> 에 있습니다.
             </p>
-            <div style="margin-top:9px; display:flex; gap:7px;">
+            <div style="margin-top:9px; display:flex; gap:7px; flex-wrap:wrap;">
                 <button class="btn-primary" id="btnAiSave" type="button" style="padding:7px 13px;">저장</button>
                 <button class="btn-ghost" id="btnAiTest" type="button" style="padding:7px 13px;">연결 확인</button>
+                <button class="btn-ghost" id="btnAiSetup" type="button" style="padding:7px 13px;">내 컴퓨터에 Codex 연결하기</button>
             </div>
+        </div>
+
+        <!-- 설치 안내. 각자 자기 계정으로 Codex 를 붙이면 좌석을 나눠 쓸 일이 없다. -->
+        <div id="setupBack" class="setup-back" hidden>
+          <div class="setup-box" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+            <div class="setup-head">
+              <h3 id="setupTitle">내 컴퓨터에 Codex 연결하기</h3>
+              <button class="btn-ghost" id="btnSetupClose" type="button" style="padding:4px 10px;">닫기</button>
+            </div>
+            <div class="setup-body">
+              <p class="hint" style="margin-top:0;">
+                본인 ChatGPT 계정으로 이 컴퓨터에 중계를 올립니다. 끝나면 해석 창이
+                <strong>알아서 찾아 씁니다</strong> — 주소를 적을 일이 없습니다.
+                각자 자기 계정을 쓰므로 다른 사람의 구독을 빌리는 것이 아닙니다.
+                Windows 기준이고, 10분쯤 걸립니다.
+              </p>
+
+              <div class="setup-step">
+                <span class="setup-n">1</span>
+                <div>
+                  <h4>Node.js 설치</h4>
+                  <p><a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a> 에서 LTS 를 받아 설치합니다. 이미 있으면 넘어갑니다.</p>
+                </div>
+              </div>
+
+              <div class="setup-step">
+                <span class="setup-n">2</span>
+                <div>
+                  <h4>분석기 파일 받기</h4>
+                  <p>아래를 실행하거나, GitHub 에서 <strong>Code → Download ZIP</strong> 으로 받아 풀어도 됩니다.</p>
+                  <div class="setup-cmd"><code>git clone https://github.com/kubattery/Electrochemical-Analyzer.git</code><button class="setup-copy" type="button" data-copy="git clone https://github.com/kubattery/Electrochemical-Analyzer.git">복사</button></div>
+                </div>
+              </div>
+
+              <div class="setup-step">
+                <span class="setup-n">3</span>
+                <div>
+                  <h4>Codex 설치</h4>
+                  <div class="setup-cmd"><code>npm install -g @openai/codex</code><button class="setup-copy" type="button" data-copy="npm install -g @openai/codex">복사</button></div>
+                </div>
+              </div>
+
+              <div class="setup-step">
+                <span class="setup-n">4</span>
+                <div>
+                  <h4>내 ChatGPT 계정으로 로그인</h4>
+                  <p>받은 폴더에서 <code>server\local\login-codex.cmd</code> 를 더블클릭합니다.
+                  창에 뜬 짧은 코드를
+                  <a href="https://auth.openai.com/codex/device" target="_blank" rel="noopener">auth.openai.com/codex/device</a>
+                  에 넣고 로그인하면 됩니다.</p>
+                  <p class="setup-warn">코드를 넣는 동안 그 창을 닫지 마십시오. <code>Logged in using ChatGPT</code> 가 보이면 끝입니다.</p>
+                </div>
+              </div>
+
+              <div class="setup-step">
+                <span class="setup-n">5</span>
+                <div>
+                  <h4>중계 실행</h4>
+                  <p>같은 폴더에서 <code>server\local\start-codex.cmd</code> 를 더블클릭합니다.
+                  쓰는 동안 그 창은 열어 둡니다.</p>
+                </div>
+              </div>
+
+              <div class="setup-step">
+                <span class="setup-n">6</span>
+                <div>
+                  <h4>확인</h4>
+                  <p>아래를 누르면 바로 찾아봅니다. 새로고침하지 않아도 됩니다.</p>
+                  <div style="display:flex; gap:7px; align-items:center; flex-wrap:wrap;">
+                    <button class="btn-primary" id="btnSetupCheck" type="button" style="padding:7px 13px;">지금 찾아보기</button>
+                    <span id="setupResult" class="hint" style="margin:0;"></span>
+                  </div>
+                </div>
+              </div>
+
+              <p class="hint" style="margin-bottom:0;">
+                설치하지 않아도 분석기는 그대로 쓸 수 있습니다. 그때는 기본 중계가 답하며,
+                무료지만 공개 가중치 모델이라 품질은 구독 쪽이 낫습니다.
+              </p>
+            </div>
+          </div>
         </div>
 
         <p class="hint" id="aiIntro">
@@ -483,7 +671,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.20.0';
+const POPUP_VERSION = '1.21.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2628,6 +2816,82 @@ async function generateAiReport() {
 $('btnAiSettings').addEventListener('click', () => {
     const b = $('aiSettings');
     b.style.display = (b.style.display === 'none') ? 'block' : 'none';
+});
+
+/* ---------------- 설치 안내 ---------------- */
+function openSetup() {
+    $('setupResult').textContent = '';
+    $('setupBack').hidden = false;
+    $('btnSetupClose').focus();
+}
+function closeSetup() {
+    $('setupBack').hidden = true;
+    $('btnAiSetup').focus();
+}
+
+$('btnAiSetup').addEventListener('click', openSetup);
+$('btnSetupClose').addEventListener('click', closeSetup);
+$('setupBack').addEventListener('click', (e) => {
+    if (e.target === $('setupBack')) closeSetup();      // 바깥을 누르면 닫는다
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('setupBack').hidden) closeSetup();
+});
+
+/* 명령을 손으로 옮겨 적다 틀리는 일이 없게 한다. */
+for (const btn of document.querySelectorAll('.setup-copy')) {
+    btn.addEventListener('click', async () => {
+        const text = btn.getAttribute('data-copy') || '';
+        let done = false;
+        try { await navigator.clipboard.writeText(text); done = true; }
+        catch (e) {
+            // 권한이 없거나 오래된 브라우저. 글자를 골라 둬서 직접 복사하게 한다.
+            const code = btn.parentElement.querySelector('code');
+            if (code) {
+                const r = document.createRange();
+                r.selectNodeContents(code);
+                const s = window.getSelection();
+                s.removeAllRanges(); s.addRange(r);
+            }
+        }
+        btn.textContent = done ? '복사됨' : '선택됨';
+        btn.classList.toggle('done', done);
+        setTimeout(() => { btn.textContent = '복사'; btn.classList.remove('done'); }, 1600);
+    });
+}
+
+/* 설치가 끝났는지 바로 확인한다. 창을 새로 열지 않아도 된다. */
+$('btnSetupCheck').addEventListener('click', async () => {
+    const out = $('setupResult');
+    const btn = $('btnSetupCheck');
+    btn.disabled = true;
+    out.style.color = 'var(--text-muted)';
+    out.textContent = '찾는 중…';
+
+    let saved = '';
+    try { saved = localStorage.getItem(AI_ENDPOINT_KEY) || ''; } catch (e) { saved = ''; }
+
+    await autoPickEndpoint();
+
+    if (endpointSource === 'local') {
+        // 직접 지정한 주소가 남아 있으면 자동 감지가 가려진다. 그 자리에서 치운다.
+        if (saved) {
+            try { localStorage.removeItem(AI_ENDPOINT_KEY); } catch (e) { /* 무시 */ }
+            $('aiEndpoint').value = '';
+        }
+        out.style.color = 'var(--color-success)';
+        out.textContent = '찾았습니다 · ' + (localLabel || '내부 서버')
+            + (saved ? ' (적어 두셨던 주소는 지웠습니다)' : '');
+    } else {
+        out.style.color = 'var(--color-orange)';
+        out.textContent = '아직 안 보입니다. 5단계의 창이 열려 있는지 확인해 주세요.';
+        if (saved) {
+            aiEndpoint = saved;
+            endpointSource = 'manual';
+            updateAiState();
+        }
+    }
+    btn.disabled = false;
 });
 
 $('btnAiSave').addEventListener('click', () => {

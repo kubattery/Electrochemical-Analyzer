@@ -417,6 +417,39 @@
       return { min: w.min, max: w.max, type: w.type, anodic: aBest, cathodic: cBest };
     });
   }
+  
+  // [신규] 구간 × '스캔레이트별' 피크 검출. rateData(스캔레이트별 스윕)를 사용.
+  //   반환: [{min,max,type, rates:[{rate, anodic:{v,i}|null, cathodic:{v,i}|null}, …]}]
+  function peaksInWindowsByRate(f, wins) {
+    var rd = f.rateData && f.rateData[f.selNum]; if (!rd) return null;
+    function byRateOf(arr) { var m = {}; (arr || []).forEach(function (s) { if (!m[s.rate]) m[s.rate] = s; }); return m; }
+    var A = byRateOf(rd.anodic), Cx = byRateOf(rd.cathodic);
+    var set = {};
+    Object.keys(A).forEach(function (r) { set[r] = 1; });
+    Object.keys(Cx).forEach(function (r) { set[r] = 1; });
+    var rates = Object.keys(set).map(parseFloat).sort(function (a, b) { return a - b; });
+    if (!rates.length) return null;
+    function peakIn(sg, lo, hi, wantMax) {
+      if (!sg) return null; var best = null, p;
+      for (p = 0; p < sg.V.length; p++) {
+        var v = sg.V[p], i = sg.I[p]; if (v < lo || v > hi) continue;
+        if (wantMax) { if (i > 0 && (!best || i > best.i)) best = { v: v, i: i }; }
+        else { if (i < 0 && (!best || i < best.i)) best = { v: v, i: i }; }
+      }
+      return best;
+    }
+    return wins.map(function (w) {
+      var wantA = (w.type !== 'cathodic'), wantC = (w.type !== 'anodic');
+      var perRate = rates.map(function (r) {
+        return {
+          rate: r,
+          anodic: wantA ? peakIn(A[r], w.min, w.max, true) : null,
+          cathodic: wantC ? peakIn(Cx[r], w.min, w.max, false) : null
+        };
+      });
+      return { min: w.min, max: w.max, type: w.type, rates: perRate };
+    });
+  }
 
   function fmtPeak(p) {
     if (!p) return '<span style="color:#6b7280;">-</span>';
@@ -434,20 +467,39 @@
       html += '<div style="margin-bottom:12px;">'
         + '<div style="font-size:12px; font-weight:600; margin-bottom:4px; color:' + f.color + ';">● ' + f.name + ' · ' + f.selNum + '사이클</div>';
       if (wins.length) {
-        // 구간 모드: 각 전압 구간에서 '선택한 종류'의 피크만 표시
-        var rows = cc ? peaksInWindows(cc, wins) : [];
-        html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
-          + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">전압 구간</th><th style="padding:3px 6px;">종류</th><th style="padding:3px 6px;">Peak Voltage (Current)</th></tr></thead><tbody>';
-        rows.forEach(function (r) {
-          var range = r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V';
-          if (r.type !== 'cathodic') {
-            html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#f59e0b;font-weight:600;">산화 (Anodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.anodic) + '</td></tr>';
-          }
-          if (r.type !== 'anodic') {
-            html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#60a5fa;font-weight:600;">환원 (Cathodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.cathodic) + '</td></tr>';
-          }
-        });
-        html += '</tbody></table>';
+        var byRate = peaksInWindowsByRate(f, wins);
+        if (byRate) {
+          // 구간 × 스캔레이트별 피크
+          html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+            + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">Scan rate</th><th style="padding:3px 6px;color:#f59e0b;">산화 (Anodic)</th><th style="padding:3px 6px;color:#60a5fa;">환원 (Cathodic)</th></tr></thead><tbody>';
+          byRate.forEach(function (wrow) {
+            var typeLabel = wrow.type === 'anodic' ? '산화' : (wrow.type === 'cathodic' ? '환원' : '산화·환원');
+            html += '<tr><td colspan="3" style="padding:4px 6px;font-weight:600;background:rgba(255,255,255,0.04);">'
+              + wrow.min.toFixed(2) + ' ~ ' + wrow.max.toFixed(2) + ' V <span style="color:#9ca3af;font-weight:400;">· ' + typeLabel + '</span></td></tr>';
+            wrow.rates.forEach(function (rr) {
+              html += '<tr><td style="padding:3px 6px;">' + rr.rate + ' mV/s</td>'
+                + '<td style="padding:3px 6px;">' + (wrow.type !== 'cathodic' ? fmtPeak(rr.anodic) : '<span style="color:#6b7280;">-</span>') + '</td>'
+                + '<td style="padding:3px 6px;">' + (wrow.type !== 'anodic' ? fmtPeak(rr.cathodic) : '<span style="color:#6b7280;">-</span>') + '</td></tr>';
+            });
+          });
+          html += '</tbody></table>';
+        } else {
+          // rateData 없는 구형 파일: 오버레이 곡선에서 구간당 피크 1개 (fallback)
+          var rows = cc ? peaksInWindows(cc, wins) : [];
+          html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">※ 이 파일은 스캔레이트 분리 불가(Time 컬럼 없음) → 구간당 대표 피크만 표시</div>';
+          html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+            + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">전압 구간</th><th style="padding:3px 6px;">종류</th><th style="padding:3px 6px;">Peak Voltage (Current)</th></tr></thead><tbody>';
+          rows.forEach(function (r) {
+            var range = r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V';
+            if (r.type !== 'cathodic') {
+              html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#f59e0b;font-weight:600;">산화 (Anodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.anodic) + '</td></tr>';
+            }
+            if (r.type !== 'anodic') {
+              html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#60a5fa;font-weight:600;">환원 (Cathodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.cathodic) + '</td></tr>';
+            }
+          });
+          html += '</tbody></table>';
+        }
       } else {
         // 구간 미설정: 기존 자동 검출
         var pk = cc ? detectPeaks(cc) : { anodic: [], cathodic: [] };

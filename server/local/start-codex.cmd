@@ -20,5 +20,5 @@ if "%PORT%"=="" set PORT=8080
 node server/local/server.js
 
 echo.
-echo Server stopped. Press any key to close...
+echo - Server stopped. Press any key to close...
 pause >nul

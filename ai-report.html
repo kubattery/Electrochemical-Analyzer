@@ -686,7 +686,27 @@
                   바로 중계만 띄웁니다.
                 </p>
                 <p>
-                  중계를 끄면 해석 창이 알아서 기본 중계로 돌아갑니다. 설정을 만질 일은 없습니다.
+                  <strong>중계는 그 창이 떠 있는 동안만 돕니다.</strong> 창을 닫거나 컴퓨터를
+                  다시 켜면 꺼지고, 그때 해석 창은 알아서 기본 중계로 돌아갑니다.
+                  고장이 아니라 그렇게 만든 것입니다.
+                </p>
+              </div>
+
+              <div class="setup-note">
+                <h4>켜는 것조차 잊고 싶다면</h4>
+                <p>
+                  <code>server\local\autostart-on.cmd</code>를 한 번 더블클릭하면
+                  <strong>Windows에 로그인할 때 중계가 알아서 뜹니다.</strong> 작업 표시줄에
+                  최소화된 창으로 남으니, 돌고 있다는 것도 보이고 닫기도 쉽습니다.
+                </p>
+                <p>
+                  되돌리려면 <code>autostart-off.cmd</code>를 누르십시오. 시작 프로그램 폴더에
+                  바로가기 하나를 넣고 빼는 것이 전부라 관리자 권한도, 설치도 필요 없습니다.
+                </p>
+                <p>
+                  사이트가 중계를 대신 켜 줄 수는 없습니다. 웹사이트가 보는 사람의 컴퓨터에서
+                  프로그램을 실행하는 것을 브라우저가 막기 때문입니다. 그래서 <em>사이트가 켠다</em>
+                  대신 <em>이미 켜져 있어 사이트가 찾는다</em> 로 만든 것입니다.
                 </p>
               </div>
 
@@ -798,7 +818,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.22.0';
+const POPUP_VERSION = '1.23.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2687,6 +2707,18 @@ async function probeLocal(url) {
     }
 }
 
+/* 이 브라우저에서 내부 서버를 본 적이 있는지 기억한다. 설치해 둔 컴퓨터인데
+   중계만 꺼진 경우와, 아예 설치하지 않은 컴퓨터를 가르기 위해서다.
+   앞의 경우에만 켜라고 알려 준다. 설치한 적 없는 사람에게는 군말이 된다. */
+const SAW_LOCAL_KEY = 'hc_ai_saw_local';
+function rememberLocal() {
+    try { localStorage.setItem(SAW_LOCAL_KEY, '1'); } catch (e) { /* 무시 */ }
+}
+function hasSeenLocal() {
+    try { return localStorage.getItem(SAW_LOCAL_KEY) === '1'; }
+    catch (e) { return false; }
+}
+
 async function autoPickEndpoint() {
     for (const url of LOCAL_CANDIDATES) {
         const hit = await probeLocal(url);
@@ -2694,6 +2726,7 @@ async function autoPickEndpoint() {
             aiEndpoint = url;
             endpointSource = 'local';
             localLabel = hit.label || '내부 서버';
+            rememberLocal();
             updateAiState();
             return;
         }
@@ -2701,6 +2734,11 @@ async function autoPickEndpoint() {
     aiEndpoint = DEFAULT_ENDPOINT;
     endpointSource = 'default';
     updateAiState();
+    // 전에 쓰던 컴퓨터인데 지금 안 보인다. 고장이 아니라 꺼져 있는 것이다.
+    if (hasSeenLocal()) {
+        setAiStatus('내부 서버가 꺼져 있어 기본 중계로 답합니다. '
+            + 'start-codex.cmd 를 실행하면 구독 모델로 올라갑니다.', null);
+    }
 }
 
 let localLabel = '';

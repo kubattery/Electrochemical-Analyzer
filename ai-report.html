@@ -479,7 +479,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.17.0';
+const POPUP_VERSION = '1.18.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2389,17 +2389,29 @@ function startWait(label) {
     return () => { clearInterval(id); return Math.round((Date.now() - t0) / 1000); };
 }
 
-/* 완료 문구. API 는 토큰을 주지만 CLI 중계는 주지 않는다. 없는 값을 0 으로
-   보여 주면 오해를 사므로, 올라온 정보에 맞춰 적는다. */
+/* 어느 AI 가 답했는지 한 줄로. 설정해 둔 경로가 여러 가지라 화면만 보고는
+   무엇이 답하고 있는지 알 수 없었다. 그래서 항상 먼저 밝힌다.
+   토큰은 API 쪽만 주고 CLI 중계는 주지 않는다. 없는 값을 0 으로 보여 주면
+   오해를 사므로 올라온 것만 적는다. */
+function backendName(data) {
+    if (!data) return '';
+    if (data.label) return data.label;                  // CLI 중계가 붙여 보내는 이름
+    if (data.model) {
+        // 제공자와 모델이 다 있으면 함께 보여 어디서 돈 모델인지 분명히 한다
+        return data.provider && String(data.model).indexOf(data.provider) < 0
+            ? data.provider + ' · ' + data.model
+            : String(data.model);
+    }
+    return data.provider || '';
+}
+
 function doneStatus(data, secs) {
     const u = (data && data.usage) || {};
     const bits = [];
+    const who = backendName(data);
+    if (who) bits.push(who);
     if (u.input_tokens || u.output_tokens) {
         bits.push('입력 ' + (u.input_tokens || 0) + ' 토큰, 출력 ' + (u.output_tokens || 0) + ' 토큰');
-    } else if (data && data.label) {
-        bits.push(data.label);
-    } else if (data && data.provider) {
-        bits.push(data.provider);
     }
     if (secs != null) bits.push(secs + '초');
     setAiStatus('응답 완료' + (bits.length ? ' · ' + bits.join(' · ') : ''), 'ok');
@@ -2557,7 +2569,7 @@ $('btnAiTest').addEventListener('click', async () => {
     setAiStatus('연결을 확인하는 중…', null, true);
     try {
         const data = await callAi('한국어로 한 문장만 답하십시오.', [{ role: 'user', content: '연결 확인' }], 100);
-        setAiStatus('연결 정상 · ' + (data.provider || '?') + ' · 모델 ' + (data.model || '(미상)'), 'ok');
+        setAiStatus('연결 정상 · ' + (backendName(data) || '(미상)'), 'ok');
     } catch (err) {
         setAiStatus(err.message, 'err');
     } finally {

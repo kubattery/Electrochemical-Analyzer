@@ -410,6 +410,44 @@
                 <span class="material-icons-round">backspace</span> 대화 비우기
             </button>
         </div>
+        <!-- 수동 전달 모드: 중계 서버가 없을 때 사람이 중간에서 옮긴다 -->
+        <div id="aiManual" style="display:none; margin-top:11px; padding:11px 12px;
+             background:rgba(168,85,247,0.05); border:1px solid rgba(168,85,247,0.25); border-radius:8px;">
+            <p class="hint" style="margin:0 0 9px;">
+                <b>수동 전달 모드</b> — 중계 서버가 설정되지 않아 사이트가 직접 AI를 부를 수 없습니다.
+                대신 <b>보낼 내용을 만들어 드리니</b> AI 창에 붙여넣고, 받은 답변을 아래 칸에 붙여넣어 주세요.
+                대화는 그대로 쌓이고 해석에도 반영됩니다.
+            </p>
+            <div style="display:flex; gap:9px; flex-wrap:wrap;">
+                <button class="btn-primary" id="btnAiCopy" type="button">
+                    <span class="material-icons-round">content_copy</span> AI에 보낼 내용 복사
+                </button>
+                <a class="btn-ghost" href="https://claude.ai/new" target="_blank" rel="noopener"
+                   style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                    <span class="material-icons-round">open_in_new</span> claude.ai
+                </a>
+                <a class="btn-ghost" href="https://chatgpt.com/" target="_blank" rel="noopener"
+                   style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                    <span class="material-icons-round">open_in_new</span> ChatGPT
+                </a>
+            </div>
+            <div style="margin-top:11px;">
+                <label class="field" for="aiPaste" id="aiPasteLabel">AI가 준 답변을 여기에 붙여넣기</label>
+                <textarea id="aiPaste" rows="4" placeholder="AI 답변을 통째로 복사해 붙여넣고 아래 [답변 반영]을 누르세요."></textarea>
+                <div style="margin-top:9px; display:flex; gap:9px;">
+                    <button class="btn-primary" id="btnAiPaste" type="button">
+                        <span class="material-icons-round">done_all</span> 답변 반영
+                    </button>
+                    <button class="btn-ghost" id="btnAiPasteClear" type="button">
+                        <span class="material-icons-round">backspace</span> 지우기
+                    </button>
+                </div>
+            </div>
+            <details style="margin-top:11px;">
+                <summary id="aiPromptSummary">보낼 내용 미리보기</summary>
+                <pre id="aiPromptView">데이터를 선택하면 보낼 내용이 만들어집니다.</pre>
+            </details>
+        </div>
         <div class="status-bar" id="aiStatus" style="margin-top:11px;"></div>
     </div>
 
@@ -441,7 +479,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.13.0';
+const POPUP_VERSION = '1.14.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2319,8 +2357,16 @@ function updateAiState() {
         badge.textContent = '서버 미설정';
         badge.className = 'badge badge-err';
     }
-    $('btnAiSend').disabled = !aiEndpoint || aiBusy;
-    $('btnAiReport').disabled = !aiEndpoint || aiBusy;
+    // 중계 서버가 없으면 수동 전달 모드로 바꾼다. 기능을 막지 않고 경로만 바꾼다.
+    const manual = aiManualMode();
+    $('aiManual').style.display = manual ? 'block' : 'none';
+    $('btnAiSend').style.display = manual ? 'none' : '';
+    $('btnAiSend').disabled = manual || aiBusy;
+    $('btnAiReport').disabled = aiBusy;
+    $('aiIntro').innerHTML = manual
+        ? '개질 조건이나 궁금한 점을 입력한 뒤 <b>AI에 보낼 내용 복사</b>를 누르세요. AI 창에 붙여넣고 받은 답변을 돌려주면 대화가 이어집니다.'
+        : '개질 조건이나 궁금한 점을 자유롭게 물어보십시오. AI가 필요한 정보를 되물으며 맥락을 쌓고, <b>해석 생성</b>을 누르면 그때까지의 대화를 모두 반영해 해석을 다시 작성합니다.';
+    if (manual) updateManualPreview();
 }
 
 function setAiStatus(text, kind, spinning) {
@@ -2489,14 +2535,158 @@ $('btnAiTest').addEventListener('click', async () => {
 
 $('btnAiSend').addEventListener('click', sendAiMessage);
 $('aiInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); sendAiMessage(); }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (aiManualMode()) manualCopyChat(); else sendAiMessage();
 });
-$('btnAiReport').addEventListener('click', generateAiReport);
+$('btnAiReport').addEventListener('click', () => {
+    if (aiManualMode()) manualCopyReport(); else generateAiReport();
+});
 $('btnAiClear').addEventListener('click', () => {
     aiMessages = [];
+    pendingKind = null;
     renderAiLog();
+    if (aiManualMode()) updateManualPreview();
     setAiStatus('대화를 비웠습니다.', 'ok');
 });
+
+
+/* ---------------- 수동 전달 모드 ----------------
+ * 중계 서버가 없으면 사이트가 AI 를 직접 부를 수 없다. 그렇다고 대화 기능을
+ * 포기할 이유는 없다. 보낼 내용을 만들어 주고 받은 답변을 읽어 주면,
+ * 사람이 중간에서 옮기는 것만 다를 뿐 대화는 똑같이 쌓인다.
+ * claude.ai, ChatGPT 등 어디에 붙여넣어도 동작한다.
+ *
+ * pendingKind 로 지금 기다리는 답변이 대화용인지 해석문인지 구분한다.
+ * 이를 구분하지 않으면 붙여넣은 글이 엉뚱한 곳으로 들어간다.
+ * ----------------------------------------------- */
+
+let pendingKind = null;    // 'chat' | 'report' | null
+
+function aiManualMode() {
+    return !aiEndpoint;
+}
+
+/** 외부 AI 창에 그대로 붙여넣을 전체 텍스트 */
+function buildManualPrompt(kind, userText) {
+    const NLM = String.fromCharCode(10);
+    const sel = selectedDatasets();
+    if (sel.length === 0) return null;
+    const fam = resolveFamily(sel);
+
+    const parts = [chatSystemPrompt(sel, fam), '', '---', ''];
+
+    if (aiMessages.length) {
+        parts.push('[지금까지의 대화]');
+        aiMessages.forEach(m => parts.push((m.role === 'user' ? '연구자: ' : 'AI: ') + m.content));
+        parts.push('');
+    }
+
+    if (kind === 'report') {
+        const fmt = ($('optFormat') && $('optFormat').value) || 'discussion';
+        const pris = pristineDataset(sel);
+        const cmp = !!(pris && sel.length > 1);
+        parts.push('[요청] 지금까지의 대화에서 확인된 내용을 모두 반영해 아래 형식으로 해석문을 작성하십시오.');
+        parts.push('대화에서 확인되지 않은 것은 확인되지 않았다고 쓰고 지어내지 마십시오.');
+        if (cmp) parts.push('기준 시료(pristine)는 "' + pris.name + '" 입니다. 나머지는 개질 시료로 보고 기준 대비 비교로 서술하십시오.');
+        parts.push('', outputSpec('ko', fmt, cmp));
+    } else {
+        parts.push('[연구자의 말]');
+        parts.push(userText);
+        parts.push('');
+        parts.push('위 지침에 따라 3~5문장으로 짧게 답하고, 필요하면 하나만 되물으십시오.');
+    }
+    return parts.join(NLM);
+}
+
+function updateManualPreview() {
+    const view = $('aiPromptView');
+    const sum = $('aiPromptSummary');
+    if (!view || !sum) return;
+    if (!snapshot || selectedDatasets().length === 0) {
+        view.textContent = '데이터를 선택하면 보낼 내용이 만들어집니다.';
+        sum.textContent = '보낼 내용 미리보기';
+        return;
+    }
+    const t = buildManualPrompt('chat', '(여기에 입력한 질문이 들어갑니다)') || '';
+    view.textContent = t;
+    sum.textContent = '보낼 내용 미리보기 — ' + t.length.toLocaleString() + '자';
+}
+
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+/** 대화용: 입력한 질문을 로그에 올리고 보낼 내용을 복사한다 */
+async function manualCopyChat() {
+    const box = $('aiInput');
+    const text = (box.value || '').trim();
+    if (!text) { setAiStatus('먼저 보낼 말을 입력해 주세요.', 'err'); return; }
+    if (selectedDatasets().length === 0) { setAiStatus('데이터셋을 먼저 선택해 주세요.', 'err'); return; }
+
+    const prompt = buildManualPrompt('chat', text);
+    const ok = await copyToClipboard(prompt);
+
+    // 복사에 실패해도 미리보기로 가져갈 수 있으므로 대화는 그대로 진행한다
+    aiMessages.push({ role: 'user', content: text });
+    box.value = '';
+    pendingKind = 'chat';
+    renderAiLog();
+    updateManualPreview();
+    $('aiPasteLabel').textContent = 'AI가 준 답변을 여기에 붙여넣기';
+
+    setAiStatus(ok
+        ? '복사했습니다 (' + prompt.length.toLocaleString() + '자). AI 창에 붙여넣고, 받은 답변을 아래 칸에 넣어 주세요.'
+        : '자동 복사가 막혀 있습니다. 아래 미리보기를 펼쳐 내용을 직접 선택해 복사해 주세요.', ok ? 'ok' : 'err');
+}
+
+/** 해석문용: 대화 전체 + 출력 형식 지시를 복사한다 */
+async function manualCopyReport() {
+    if (selectedDatasets().length === 0) { setAiStatus('데이터셋을 먼저 선택해 주세요.', 'err'); return; }
+    const prompt = buildManualPrompt('report');
+    const ok = await copyToClipboard(prompt);
+    pendingKind = 'report';
+    $('aiPasteLabel').textContent = 'AI가 쓴 해석문을 여기에 붙여넣기';
+    setAiStatus(ok
+        ? '해석 요청을 복사했습니다 (' + prompt.length.toLocaleString() + '자). AI 창에 붙여넣고, 받은 해석문을 아래 칸에 넣어 주세요.'
+        : '자동 복사가 막혀 있습니다. 아래 미리보기를 펼쳐 내용을 직접 선택해 복사해 주세요.', ok ? 'ok' : 'err');
+}
+
+/** 붙여넣은 답변을 대화 또는 결과 카드로 보낸다 */
+function manualApplyPaste() {
+    const box = $('aiPaste');
+    const text = (box.value || '').trim();
+    if (!text) { setAiStatus('붙여넣은 내용이 없습니다.', 'err'); return; }
+
+    if (pendingKind === 'report') {
+        rawMarkdown = text;
+        $('output').innerHTML = renderMarkdown(text);
+        $('outputCard').style.display = 'block';
+        $('outputKind').textContent = 'AI 해석 · 수동 전달';
+        box.value = '';
+        pendingKind = null;
+        setAiStatus('해석문을 반영했습니다. 아래 결과 카드에서 복사하거나 .md 로 저장할 수 있습니다.', 'ok');
+        $('outputCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+    }
+
+    // 기본은 대화 답변으로 본다
+    aiMessages.push({ role: 'assistant', content: text });
+    box.value = '';
+    pendingKind = null;
+    renderAiLog();
+    updateManualPreview();
+    setAiStatus('답변을 대화에 반영했습니다. 이어서 물어보거나 [대화 반영해 해석 생성]을 누르세요.', 'ok');
+}
+
+$('btnAiCopy').addEventListener('click', manualCopyChat);
+$('btnAiPaste').addEventListener('click', manualApplyPaste);
+$('btnAiPasteClear').addEventListener('click', () => { $('aiPaste').value = ''; });
 
 /* ---------------- 복사 / 저장 ---------------- */
 $('btnCopy').addEventListener('click', async () => {

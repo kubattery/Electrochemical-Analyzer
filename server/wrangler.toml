@@ -5,6 +5,15 @@ compatibility_flags = ["nodejs_compat"]
 
 # 허용할 오리진. 배포 주소가 바뀌면 여기도 바꿔야 한다.
 # 로컬에서 시험할 때는 http://localhost:8080 같은 주소를 쉼표로 덧붙인다.
+# [중요] Worker 가 실행되는 지역 문제
+#   Cloudflare 는 요청자와 가까운 데이터센터에서 Worker 를 실행한다.
+#   한국에서 접속하면 홍콩(HKG) 에서 도는 경우가 많은데, Google 은 홍콩에서의
+#   Gemini API 호출을 지역 제한으로 거부한다(User location is not supported).
+#   smart 모드를 켜면 호출 대상(Google API)에 가까운 곳에서 실행하므로
+#   제한 지역을 벗어날 가능성이 높아진다.
+[placement]
+mode = "smart"
+
 [vars]
 ALLOWED_ORIGINS = "https://kubattery.github.io"
 

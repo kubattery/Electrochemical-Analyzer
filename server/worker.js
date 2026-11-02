@@ -66,6 +66,33 @@ function json(body, status, headers) {
  * 창 쪽은 이 형태만 알면 되므로 제공자를 바꿔도 창을 고칠 일이 없다.
  * ---------------------------------------------- */
 
+/**
+ * 응답 본문을 글자로 먼저 읽고 JSON 으로 해석한다.
+ * 곧바로 res.json() 을 부르면 빈 응답이나 HTML 오류 페이지일 때
+ * Unexpected end of JSON input 만 남고 진짜 사유가 사라진다.
+ */
+async function readJson(res, who) {
+    const raw = await res.text();
+    if (!raw || !raw.trim()) {
+        // 본문이 비면 헤더가 유일한 단서다. 어디서 막혔는지 알려면 함께 남겨야 한다.
+        const hints = [];
+        ['content-type', 'content-length', 'x-request-id', 'www-authenticate',
+         'cf-ray', 'server'].forEach(k => {
+            const v = res.headers.get(k);
+            if (v) hints.push(k + '=' + v);
+        });
+        throw new Error(who + ' 가 빈 응답을 돌려주었습니다 (HTTP ' + res.status + ' ' +
+            (res.statusText || '') + '). ' + (hints.length ? '[' + hints.join(', ') + '] ' : '') +
+            '키가 올바른지, 크레딧 잔액이 있는지 확인해 주세요.');
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        throw new Error(who + ' 응답을 해석하지 못했습니다 (HTTP ' + res.status + '): ' +
+            raw.slice(0, 300));
+    }
+}
+
 async function callAnthropic(env, model, system, messages, maxTokens) {
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const res = await client.messages.create({
@@ -110,7 +137,7 @@ async function callGemini(env, model, system, messages, maxTokens) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
-    const data = await res.json();
+    const data = await readJson(res, 'Gemini');
     if (!res.ok) {
         const msg = (data && data.error) ? data.error.message : ('HTTP ' + res.status);
         throw new Error('Gemini 오류: ' + msg);
@@ -150,7 +177,7 @@ async function callOpenAI(env, model, system, messages, maxTokens) {
             },
             body: JSON.stringify(body)
         });
-        return { res: r, data: await r.json() };
+        return { res: r, data: await readJson(r, 'OpenAI') };
     }
 
     let out = await send('max_completion_tokens');
@@ -201,6 +228,23 @@ export default {
         };
         if (!keyFor[provider]) {
             return json({ error: 'PROVIDER 가 ' + provider + ' 인데 해당 키가 설정되어 있지 않습니다.' }, 500, cors);
+        }
+
+        // [임시 진단] 키 값 자체는 절대 내보내지 않고 모양만 알려 준다.
+        // 원인을 잡은 뒤 이 블록은 제거한다.
+        const url = new URL(request.url);
+        if (url.searchParams.get('diag') === '1') {
+            const k = keyFor[provider] || '';
+            return json({
+                provider: provider,
+                keyLength: k.length,
+                keyPrefix: k.slice(0, 7),
+                keySuffix: k.slice(-4),
+                hasWhitespace: k !== k.trim() || k.indexOf(String.fromCharCode(32)) >= 0,
+                hasNewline: k.indexOf(String.fromCharCode(10)) >= 0 || k.indexOf(String.fromCharCode(13)) >= 0,
+                trimmedLength: k.trim().length,
+                model: env.MODEL || DEFAULT_MODEL[provider]
+            }, 200, cors);
         }
 
         const raw = await request.text();

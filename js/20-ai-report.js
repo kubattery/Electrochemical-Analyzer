@@ -27,7 +27,7 @@ let _aiReportWin = null;
  * 팝업은 메인 페이지와 별개 문서이므로, 메인 창에서 Ctrl+Shift+R 을 눌러도
  * 팝업의 캐시는 갱신되지 않는다. 이 쿼리 문자열이 유일한 갱신 수단이다.
  */
-const AI_REPORT_PAGE_VERSION = '1.12.1';
+const AI_REPORT_PAGE_VERSION = '1.13.0';
 
 /**
  * postMessage 대상 오리진.
@@ -423,6 +423,78 @@ function aiCycleMetricsSeries(pc, maxPoints) {
 }
 
 /* ==========================================
+   2-D. 전압 구간별 용량 분배 (계열 무관 지표)
+
+   Slope/Plateau 분리는 하드카본 전용 개념이었다. 양극에는 그대로 쓸 수 없지만,
+   "어느 전압대에서 용량이 나오는가" 자체는 모든 전극에 의미가 있다.
+   그래서 여기서는 계열을 모르는 채로 전압 히스토그램만 만들고,
+   구간을 어떻게 나눠 읽을지는 팝업의 계열 프로파일이 정한다.
+
+   함께 내는 평탄도는 LFP·NVP·LTO 처럼 평탄한 소재와 NCM·하드카본처럼
+   경사진 소재를 가르는 계열 무관 지표다.
+   ========================================== */
+
+const AI_VBIN = 0.05;   // 전압 히스토그램 폭 (V)
+
+/**
+ * 대표 사이클 방전 곡선의 전압 구간별 용량 분포.
+ * 반환: { binSize, bins: [[구간하한V, 용량mAh/g], ...], total, median, flat50, flat100 }
+ *   flat50  = 용량 가중 중앙 전압 ±50 mV 안에서 나온 용량의 비율(%)
+ *   flat100 = 같은 방식의 ±100 mV 비율
+ */
+function aiVoltageProfile(points) {
+    if (!Array.isArray(points) || points.length < 3) return null;
+
+    // 인접 두 점 사이의 용량 증분을 그 구간의 중앙 전압에 배분한다
+    const seg = [];
+    let prevV = null, prevQ = null, total = 0;
+    for (const p of points) {
+        const v = parseFloat(p.voltage);
+        const q = parseFloat(p.capacity);
+        if (!isFinite(v) || !isFinite(q)) continue;
+        if (prevV !== null) {
+            const dq = q - prevQ;
+            if (dq > 0) { seg.push({ v: (v + prevV) / 2, dq: dq }); total += dq; }
+        }
+        prevV = v; prevQ = q;
+    }
+    if (!(total > 0) || seg.length === 0) return null;
+
+    // 히스토그램
+    const map = new Map();
+    seg.forEach(s => {
+        const key = Math.floor(s.v / AI_VBIN) * AI_VBIN;
+        map.set(key, (map.get(key) || 0) + s.dq);
+    });
+    const bins = Array.from(map.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([v, q]) => [aiNum(v, 3), aiNum(q, 2)]);
+
+    // 용량 가중 중앙 전압: 누적 용량이 절반을 넘는 지점의 전압
+    const byV = seg.slice().sort((a, b) => b.v - a.v);   // 방전이므로 높은 전압부터
+    let acc = 0, median = byV[0].v;
+    for (const s of byV) { acc += s.dq; if (acc >= total / 2) { median = s.v; break; } }
+
+    const within = (mv) => {
+        let c = 0;
+        seg.forEach(s => { if (Math.abs(s.v - median) <= mv / 1000) c += s.dq; });
+        return aiNum((c / total) * 100);
+    };
+
+    return {
+        note: '방전 곡선을 ' + AI_VBIN + ' V 폭으로 나눈 용량 분포. bins 는 [구간 하한 전압, 그 구간에서 나온 용량]. ' +
+              'median 은 용량 가중 중앙 전압이고, flat50/flat100 은 그 전압에서 ±50/±100 mV 안에 든 용량 비율(%)이다. ' +
+              '평탄한 소재일수록 이 값이 크다.',
+        binSize: AI_VBIN,
+        total_mAh_g: aiNum(total),
+        median_V: aiNum(median, 3),
+        flat50_percent: within(50),
+        flat100_percent: within(100),
+        bins: bins
+    };
+}
+
+/* ==========================================
    2-C. dQ/dV 피크 (직접 계산)
 
    기존에는 화면의 dQ/dV 표를 DOM 에서 긁어 왔다. 그 탭을 한 번도 열지 않으면
@@ -700,6 +772,7 @@ function aiBuildDatasetEntry(ds, settings, defaultIds) {
             cycleLife: aiComputeCycleLife(pc),
             cycleMetrics: aiCycleMetricsSeries(pc),
             dqdvPeaks: aiDqDvSummary(pc),
+            voltageProfile: curveData ? aiVoltageProfile(curveData.sodiation) : null,
             representativeCurve: curveData ? {
                 cycle: curveCycleNum,
                 note: '[capacity_mAh_g, voltage_V] 쌍. 원본에서 최대 40점으로 축약됨.',

@@ -479,7 +479,7 @@
  *  - 해석은 전적으로 이 창 안에서 계산한다. 외부로 나가는 요청이 없다.
  * ========================================================================== */
 
-const POPUP_VERSION = '1.15.0';
+const POPUP_VERSION = '1.16.0';
 
 const $ = (id) => document.getElementById(id);
 
@@ -2376,6 +2376,35 @@ function setAiStatus(text, kind, spinning) {
         '<span style="color:' + color + '">' + escapeHtml(text) + '</span>';
 }
 
+/* 기다리는 동안 경과를 보여 준다. 구독 CLI 중계는 한두 분이 걸릴 수 있어
+   문구가 멈춰 있으면 먹통으로 보인다. 멈추는 함수를 돌려준다. */
+function startWait(label) {
+    const t0 = Date.now();
+    const tick = () => {
+        const s = Math.round((Date.now() - t0) / 1000);
+        setAiStatus(label + ' · ' + s + '초 경과', null, true);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => { clearInterval(id); return Math.round((Date.now() - t0) / 1000); };
+}
+
+/* 완료 문구. API 는 토큰을 주지만 CLI 중계는 주지 않는다. 없는 값을 0 으로
+   보여 주면 오해를 사므로, 올라온 정보에 맞춰 적는다. */
+function doneStatus(data, secs) {
+    const u = (data && data.usage) || {};
+    const bits = [];
+    if (u.input_tokens || u.output_tokens) {
+        bits.push('입력 ' + (u.input_tokens || 0) + ' 토큰, 출력 ' + (u.output_tokens || 0) + ' 토큰');
+    } else if (data && data.label) {
+        bits.push(data.label);
+    } else if (data && data.provider) {
+        bits.push(data.provider);
+    }
+    if (secs != null) bits.push(secs + '초');
+    setAiStatus('응답 완료' + (bits.length ? ' · ' + bits.join(' · ') : ''), 'ok');
+}
+
 function renderAiLog() {
     const log = $('aiLog');
     if (aiMessages.length === 0) { log.style.display = 'none'; return; }
@@ -2444,15 +2473,15 @@ async function sendAiMessage() {
     renderAiLog();
 
     aiBusy = true; updateAiState();
-    setAiStatus('답변을 기다리는 중…', null, true);
+    const stopWait = startWait('답변을 기다리는 중…');
     try {
         const fam = resolveFamily(sel);
         const data = await callAi(chatSystemPrompt(sel, fam), aiMessages, 2000);
         aiMessages.push({ role: 'assistant', content: data.text || '(빈 응답)' });
         renderAiLog();
-        const u = data.usage || {};
-        setAiStatus('응답 완료 · 입력 ' + (u.input_tokens || 0) + ' 토큰, 출력 ' + (u.output_tokens || 0) + ' 토큰', 'ok');
+        doneStatus(data, stopWait());
     } catch (err) {
+        stopWait();
         aiMessages.pop();   // 실패한 차례는 이력에 남기지 않는다
         renderAiLog();
         setAiStatus(err.message, 'err');
@@ -2487,18 +2516,17 @@ async function generateAiReport() {
     const messages = aiMessages.concat([{ role: 'user', content: ask.join(NLC) }]);
 
     aiBusy = true; updateAiState();
-    setAiStatus('해석을 작성하는 중… 20초 이상 걸릴 수 있습니다.', null, true);
+    const stopWait = startWait('해석을 작성하는 중…');
     try {
         const data = await callAi(chatSystemPrompt(sel, fam), messages, 12000);
         rawMarkdown = data.text || '';
         $('output').innerHTML = renderMarkdown(rawMarkdown);
         $('outputCard').style.display = 'block';
         $('outputKind').textContent = 'AI 해석 · 대화 반영';
-        const u = data.usage || {};
-        setAiStatus('해석 생성 완료 · 입력 ' + (u.input_tokens || 0) + ' 토큰, 출력 ' + (u.output_tokens || 0) +
-                    ' 토큰 (캐시 적중 ' + (u.cache_read_input_tokens || 0) + ')', 'ok');
+        doneStatus(data, stopWait());
         $('outputCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
+        stopWait();
         setAiStatus(err.message, 'err');
     } finally {
         aiBusy = false; updateAiState();

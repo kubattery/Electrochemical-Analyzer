@@ -11,23 +11,31 @@
  *    지역 제한으로 거부하던 문제가 사라진다.
  *  · 키는 서버 환경변수에만 둔다. 연구실 구성원은 주소만 알면 된다.
  *
- * [중요] 구독 계정으로는 동작하지 않는다
- *  Codex CLI 나 Claude Code 를 이 서버에 로그인해 두고 호출을 대신 시키는 구성은
- *  만들지 않는다. 구독은 본인이 대화형으로 쓰라고 주는 좌석이며, 그것을 여러
- *  사람의 요청을 처리하는 백엔드로 돌리면 API 과금을 우회하는 형태가 되어
- *  계정 제한을 받을 수 있고, CLI 업데이트나 인증 만료 때마다 끊긴다.
- *  아래 제공자 중 하나의 API 키를 쓴다. Gemini 는 무료 등급이 있다.
+ * AI 는 두 방식 중 하나로 쓴다.
+ *
+ *  (1) 구독 CLI 중계 — AI_CLI=claude 또는 AI_CLI=codex
+ *      로컬에 로그인된 CLI 에 질문을 넘기고 답을 받아 온다. 추가 비용이 없다.
+ *      혼자 쓰는 경우를 위한 것이며, 그 전제를 동작으로 묶어 두었다.
+ *      CLI 모드에서는 서버가 127.0.0.1 에만 붙어 다른 PC 에서 닿지 않는다.
+ *      좌석 하나를 여러 사람이 쓰는 공용 중계로 돌리는 것은 구독의 용도가
+ *      아니다. ALLOW_LAN=1 로 풀 수는 있게 두었지만 그때는 본인 판단이다.
+ *
+ *  (2) API 키 — GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
+ *      여러 사람이 쓰거나 서버를 상시 열어 둘 때는 이쪽이다.
+ *      Gemini 는 무료 등급이 있다.
  *
  * 실행:
- *   set GEMINI_API_KEY=... && node server/local/server.js      (Windows CMD)
- *   $env:GEMINI_API_KEY="..."; node server/local/server.js      (PowerShell)
- *   GEMINI_API_KEY=... node server/local/server.js              (Linux/Mac)
+ *   set AI_CLI=claude && node server/local/server.js             (Windows CMD)
+ *   $env:AI_CLI="claude"; node server/local/server.js             (PowerShell)
+ *   AI_CLI=claude node server/local/server.js                     (Linux/Mac)
+ *   $env:GEMINI_API_KEY="..."; node server/local/server.js        (키를 쓸 때)
  * ========================================================================== */
 
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { callCli, cliStatus, CLI_SPECS } from './cli-bridge.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');      // 저장소 루트 = 웹사이트 파일 위치
@@ -52,12 +60,25 @@ const MIME = {
     '.ico': 'image/x-icon', '.woff2': 'font/woff2'
 };
 
+/* 어떤 방식으로 AI 를 부를지 정한다. CLI 를 지정했으면 그쪽이 먼저다. */
+function pickCli() {
+    const v = (process.env.AI_CLI || '').trim().toLowerCase();
+    return CLI_SPECS[v] ? v : null;
+}
+
 function pickProvider() {
+    if (pickCli()) return 'cli';
     if (process.env.PROVIDER) return process.env.PROVIDER.trim().toLowerCase();
     if (process.env.GEMINI_API_KEY) return 'gemini';
     if (process.env.OPENAI_API_KEY) return 'openai';
     if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
     return null;
+}
+
+/* CLI 모드는 혼자 쓰는 전제다. 그 전제를 글로만 두지 않고 바인딩으로 묶는다. */
+function bindHost() {
+    if (process.env.ALLOW_LAN === '1') return '0.0.0.0';
+    return pickCli() ? '127.0.0.1' : '0.0.0.0';
 }
 
 /** 응답 본문을 글자로 먼저 읽고 JSON 으로 해석한다. 빈 응답이나 HTML 오류 페이지에서
@@ -236,8 +257,11 @@ async function handleAi(req, res) {
         res.end(JSON.stringify(obj));
     };
 
-    if (!provider || !keyFor[provider]) {
-        send(500, { error: '서버에 API 키가 설정되어 있지 않습니다. GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY 중 하나를 환경변수로 넣고 다시 실행해 주세요.' });
+    if (provider === 'cli') {
+        const st = cliStatus(pickCli());
+        if (!st.ok) { send(500, { error: st.error }); return; }
+    } else if (!provider || !keyFor[provider]) {
+        send(500, { error: '서버에 AI 설정이 없습니다. 구독 CLI 를 쓰려면 AI_CLI=claude 또는 AI_CLI=codex 를, 키를 쓰려면 GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 중 하나를 환경변수로 넣고 다시 실행해 주세요.' });
         return;
     }
 
@@ -250,7 +274,8 @@ async function handleAi(req, res) {
 
     try {
         let out;
-        if (provider === 'gemini') out = await callGemini(model, system, messages, maxTokens);
+        if (provider === 'cli') out = await callCli(pickCli(), process.env.MODEL || '', system, messages);
+        else if (provider === 'gemini') out = await callGemini(model, system, messages, maxTokens);
         else if (provider === 'openai') out = await callOpenAI(model, system, messages, maxTokens);
         else if (provider === 'anthropic') out = await callAnthropic(model, system, messages, maxTokens);
         else { send(500, { error: '알 수 없는 PROVIDER: ' + provider }); return; }
@@ -284,18 +309,35 @@ http.createServer((req, res) => {
         res.writeHead(405); res.end(); return;
     }
     serveStatic(req, res, url);
-}).listen(PORT, () => {
+}).listen(PORT, bindHost(), () => {
     const provider = pickProvider();
+    const cli = pickCli();
+    const host = bindHost();
+    let how = '(설정 없음 — AI 대화 불가)';
+    if (cli) {
+        const st = cliStatus(cli);
+        how = st.ok ? (st.label + ' 구독 중계  [' + st.bin + ']')
+                    : (st.label + ' — 준비 안 됨: ' + st.error);
+    } else if (provider) {
+        how = provider + ' API 키';
+    }
     console.log('');
     console.log('  ESMPL Analyzer 내부 서버');
     console.log('  ────────────────────────────────');
     console.log('  웹사이트   : http://localhost:' + PORT + '/');
     console.log('  AI 중계    : http://localhost:' + PORT + '/api/ai');
-    console.log('  제공자     : ' + (provider || '(키 없음 — AI 대화 불가)'));
+    console.log('  AI 방식    : ' + how);
     console.log('  파일 위치  : ' + ROOT);
     console.log('');
-    console.log('  해석 창의 [서버 설정] 에 아래를 넣으세요:');
-    console.log('    http://localhost:' + PORT + '/api/ai');
-    console.log('  다른 PC 에서 접속하려면 localhost 대신 이 서버의 IP 를 쓰세요.');
+    console.log('  해석 창의 [서버 설정] 에 넣을 값:  /api/ai');
+    console.log('  (이 서버에서 웹사이트를 함께 열면 주소를 길게 적을 필요가 없습니다)');
+    console.log('');
+    if (host === '127.0.0.1') {
+        console.log('  이 PC 에서만 접속됩니다. 구독 CLI 중계는 혼자 쓰는 용도이므로');
+        console.log('  다른 PC 에 열지 않습니다. 여러 사람이 쓰려면 API 키 방식을 쓰세요.');
+    } else {
+        console.log('  같은 네트워크의 다른 PC 에서도 접속됩니다. 외부 인터넷에는 노출하지 마세요.');
+        console.log('  (이 서버에는 인증이 없어 주소를 아는 누구나 쓸 수 있습니다)');
+    }
     console.log('');
 });

@@ -23,6 +23,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 const DEFAULT_MODEL = {
+    // 한국어 서술과 도메인 지시 수행이 가장 나았다. Llama 3.3 은 한국어를 중국어로
+    // 오인하고 반복 붕괴를 일으켰고, Llama 4 Scout 는 동작하지만 서술이 일반적이다.
+    cloudflare: '@cf/openai/gpt-oss-120b',
     anthropic: 'claude-opus-5',
     gemini: 'gemini-flash-latest',
     openai: 'gpt-4o'
@@ -40,6 +43,8 @@ function pickProvider(env) {
     if (env.ANTHROPIC_API_KEY) return 'anthropic';
     if (env.GEMINI_API_KEY) return 'gemini';
     if (env.OPENAI_API_KEY) return 'openai';
+    // 키가 하나도 없어도 Workers AI 바인딩만 있으면 동작한다
+    if (env.AI) return 'cloudflare';
     return null;
 }
 
@@ -91,6 +96,48 @@ async function readJson(res, who) {
         throw new Error(who + ' 응답을 해석하지 못했습니다 (HTTP ' + res.status + '): ' +
             raw.slice(0, 300));
     }
+}
+
+/**
+ * Cloudflare Workers AI — API 키가 필요 없는 경로.
+ *
+ * 왜 이것이 유일하게 키 없이 되는가
+ *  · 다른 제공자는 모두 계정 인증이 필요하고, 그 인증 수단이 곧 API 키다.
+ *  · Workers AI 는 이 Worker 가 이미 Cloudflare 계정 안에서 돌고 있으므로
+ *    계정 자체가 인증이다. env.AI 바인딩으로 바로 부른다.
+ *  · Cloudflare 네트워크에서 추론하므로 Gemini 를 막았던 지역 제한도 없다.
+ *  · 무료 플랜에 하루 10,000 뉴런이 매일 주어진다. 카드 등록도 필요 없다.
+ *
+ * 한계: 돌릴 수 있는 것은 공개 가중치 모델이다. 같은 프롬프트라도
+ *       GPT-4o 나 Claude 만큼의 서술은 기대하기 어렵다.
+ */
+async function callWorkersAI(env, model, system, messages, maxTokens) {
+    if (!env.AI) {
+        throw new Error('Workers AI 바인딩이 없습니다. wrangler.toml 에 [ai] binding = "AI" 를 넣고 다시 배포해 주세요.');
+    }
+    const msgs = [];
+    if (system) msgs.push({ role: 'system', content: system });
+    messages.forEach(m => msgs.push({ role: m.role, content: String(m.content) }));
+
+    const res = await env.AI.run(model, { messages: msgs, max_tokens: maxTokens });
+
+    // 텍스트 생성 모델은 response 에 답을 담아 준다. 모델에 따라 모양이 조금씩 다르므로 넓게 받는다.
+    const text = (typeof res === 'string') ? res
+        : (res && (res.response || res.result || (res.choices && res.choices[0] &&
+           res.choices[0].message && res.choices[0].message.content))) || '';
+    if (!text) {
+        throw new Error('Workers AI 가 빈 응답을 돌려주었습니다. 모델 이름이 맞는지 확인해 주세요: ' + model);
+    }
+    const u = (res && res.usage) || {};
+    return {
+        text: text,
+        model: model,
+        usage: {
+            input_tokens: u.prompt_tokens || 0,
+            output_tokens: u.completion_tokens || 0,
+            cache_read_input_tokens: 0
+        }
+    };
 }
 
 async function callAnthropic(env, model, system, messages, maxTokens) {
@@ -219,14 +266,15 @@ export default {
 
         const provider = pickProvider(env);
         if (!provider) {
-            return json({ error: '서버에 API 키가 설정되어 있지 않습니다. ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY 중 하나를 넣어 주세요.' }, 500, cors);
+            return json({ error: '사용할 수 있는 제공자가 없습니다. wrangler.toml 에 [ai] binding = "AI" 를 넣어 Workers AI 를 쓰거나, ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY 중 하나를 넣어 주세요.' }, 500, cors);
         }
         const keyFor = {
             anthropic: env.ANTHROPIC_API_KEY,
             gemini: env.GEMINI_API_KEY,
             openai: env.OPENAI_API_KEY
         };
-        if (!keyFor[provider]) {
+        // Workers AI 는 계정 자체가 인증이므로 키를 확인하지 않는다
+        if (provider !== 'cloudflare' && !keyFor[provider]) {
             return json({ error: 'PROVIDER 가 ' + provider + ' 인데 해당 키가 설정되어 있지 않습니다.' }, 500, cors);
         }
 
@@ -258,12 +306,16 @@ export default {
         const messages = Array.isArray(body.messages) ? body.messages.slice(-MAX_MESSAGES) : [];
         if (messages.length === 0) return json({ error: 'messages 가 비어 있습니다.' }, 400, cors);
 
-        const model = env.MODEL || DEFAULT_MODEL[provider];
+        // 요청에서 모델을 지정할 수 있게 한다. 오리진이 제한돼 있어 외부에서 쓸 수 없고,
+        // 모델을 바꿔 비교해 보려면 이 통로가 필요하다.
+        const model = (typeof body.model === 'string' && body.model.trim())
+            || env.MODEL || DEFAULT_MODEL[provider];
         const maxTokens = Math.min(Number(body.max_tokens) || 8000, 16000);
 
         try {
             let out;
-            if (provider === 'anthropic')   out = await callAnthropic(env, model, system, messages, maxTokens);
+            if (provider === 'cloudflare')  out = await callWorkersAI(env, model, system, messages, maxTokens);
+            else if (provider === 'anthropic') out = await callAnthropic(env, model, system, messages, maxTokens);
             else if (provider === 'gemini') out = await callGemini(env, model, system, messages, maxTokens);
             else if (provider === 'openai') out = await callOpenAI(env, model, system, messages, maxTokens);
             else return json({ error: '알 수 없는 PROVIDER: ' + provider }, 500, cors);

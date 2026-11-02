@@ -11,14 +11,22 @@ compatibility_flags = ["nodejs_compat"]
 #   Gemini API 호출을 지역 제한으로 거부한다(User location is not supported).
 #   smart 모드를 켜면 호출 대상(Google API)에 가까운 곳에서 실행하므로
 #   제한 지역을 벗어날 가능성이 높아진다.
+# Workers AI — API 키 없이 쓰는 경로.
+#   이 Worker 가 Cloudflare 계정 안에서 돌기 때문에 계정 자체가 인증이 된다.
+#   무료 플랜에 하루 10,000 뉴런이 매일 주어지고 카드 등록도 필요 없다.
+#   Cloudflare 네트워크에서 추론하므로 Gemini 를 막았던 지역 제한이 없다.
+[ai]
+binding = "AI"
+
 [placement]
 mode = "smart"
 
 [vars]
 ALLOWED_ORIGINS = "https://kubattery.github.io"
 
-# 제공자를 직접 지정하고 싶을 때만 쓴다. 비우면 설정된 키로 자동 판별한다.
-# PROVIDER = "gemini"
+# 제공자 지정. cloudflare 는 Workers AI(키 불필요).
+# 유료 키로 바꾸려면 anthropic / openai / gemini 로 고치고 다시 배포한다.
+PROVIDER = "cloudflare"
 
 # 모델을 바꾸고 싶으면 주석을 풀고 값을 넣는다. 비우면 제공자별 기본값을 쓴다.
 # MODEL = "gemini-flash-latest"

@@ -79,12 +79,22 @@ http://localhost:8080/api/ai    AI 중계 (해석 창이 부르는 곳)
 
 Node.js만 있으면 됩니다. 설치할 패키지가 없습니다.
 
+**Codex 구독으로 쓸 때는** `server/local/start-codex.cmd`를 더블클릭하면 됩니다.
+환경변수를 매번 칠 필요가 없습니다.
+
+직접 실행하려면:
+
 ```powershell
 # Windows PowerShell — 구독 CLI
 cd $env:USERPROFILE\Documents\Electrochemical-Analyzer
 $env:AI_CLI="codex-app"
 node server/local/server.js
 ```
+
+> `start-codex.cmd`는 **순수 ASCII로 유지해야 합니다.** `chcp 65001`과 UTF-8 배치
+> 파일을 함께 쓰면 cmd가 이후 줄을 잘못 읽어 `echo`가 떨어져 나가고 나머지가
+> 명령으로 실행됩니다. 실제로 이 파일에 있던 전역 설치 명령이 그렇게 실행된 적이
+> 있습니다. 사람이 읽을 안내문은 Node가 출력하게 맡기십시오.
 
 ```powershell
 # Windows PowerShell — API 키
@@ -132,6 +142,7 @@ GitHub Pages에서 열었다면 전체 주소가 필요합니다. 다만 CLI 모
 | --- | --- |
 | 배너에 `준비 안 됨` | CLI가 설치되지 않았거나 PATH에 없습니다. 위 표의 설치 명령을 쓰거나 `AI_CLI_PATH`로 경로를 직접 지정하십시오 |
 | `180초 안에 오지 않아 중단` | 로그인이 만료되어 CLI가 입력을 기다리는 중일 수 있습니다. 터미널에서 `claude`(또는 `codex`)를 한 번 실행해 확인하십시오 |
+| `401 Unauthorized` · `Missing bearer` | **Codex에 로그인되어 있지 않습니다.** `codex login`을 실행하십시오. `codex app-server`의 `initialize`는 순수 로컬 처리라 **로그인하지 않아도 성공합니다.** 핸드셰이크가 됐다고 로그인된 것이 아닙니다 |
 | `빈 답을 돌려주었습니다` | CLI 출력 형식이 바뀐 경우입니다. `AI_CLI_ARGS`로 조정할 수 있습니다 |
 | `app-server 가 종료되었습니다` | Codex가 떠 있지 못했습니다. 메시지에 종료 코드와 stderr가 담깁니다. `codex login`을 먼저 확인하십시오 |
 | 매번 스레드를 새로 엶 | 데이터셋 선택이 바뀌면 지침이 달라져 정상입니다. `AI_DEBUG=1`로 사유를 보십시오 |

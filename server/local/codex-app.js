@@ -191,12 +191,55 @@ class AppServer {
             if (txt) t.items.push(txt);
             return;
         }
-        if (method === 'turn/completed') { t.done(); return; }
+        /* 재시도하다 끝내 실패한 사유를 쥐고 있는다. 실제로 쓸모 있는 설명은
+           turn 쪽이 아니라 이 알림에만 담겨 오는 경우가 있다. */
+        if (method === 'error') {
+            const msg = p.error && p.error.message;
+            if (msg) {
+                if (p.willRetry === false) t.fatalError = msg;
+                else t.lastError = msg;
+            }
+            return;
+        }
+        /* 실패한 턴도 turn/failed 가 아니라 turn/completed 로 온다.
+           status 를 보지 않으면 실패를 성공으로 읽어 '빈 답' 으로 뭉개진다. */
+        if (method === 'turn/completed') {
+            const turn = p.turn || {};
+            const failed = turn.status && String(turn.status).toLowerCase() !== 'completed'
+                && String(turn.status).toLowerCase() !== 'succeeded';
+            if (failed) {
+                const why = (turn.error && turn.error.message) || t.fatalError || t.lastError
+                    || ('상태 ' + turn.status);
+                t.fail(new Error(describeTurnError(why)));
+                return;
+            }
+            t.done();
+            return;
+        }
         if (method === 'turn/failed' || method === 'turn/aborted') {
-            const why = (p.error && p.error.message) || method;
-            t.fail(new Error('Codex 턴이 끝나지 못했습니다: ' + why));
+            const why = (p.error && p.error.message) || t.fatalError || t.lastError || method;
+            t.fail(new Error(describeTurnError(why)));
         }
     }
+}
+
+/* 원문 오류에 무엇을 하면 되는지를 붙인다. 401 은 실제로 가장 흔한 사유이고,
+   원문만 보면 무엇을 해야 할지 알 수 없다. */
+export function describeTurnError(raw) {
+    const s = String(raw == null ? '' : raw);
+    const head = 'Codex 턴이 끝나지 못했습니다: ';
+    if (s.indexOf('401') >= 0 || s.toLowerCase().indexOf('unauthorized') >= 0
+        || s.toLowerCase().indexOf('missing bearer') >= 0) {
+        return head + s + '  ->  Codex 에 로그인되어 있지 않습니다. 터미널에서 '
+            + 'codex login 을 실행해 ChatGPT 계정으로 로그인한 뒤 다시 시도해 주세요. '
+            + '(app-server 핸드셰이크는 로컬 처리라 로그인 여부와 무관하게 성공합니다)';
+    }
+    if (s.indexOf('429') >= 0 || s.toLowerCase().indexOf('rate limit') >= 0
+        || s.toLowerCase().indexOf('quota') >= 0) {
+        return head + s + '  ->  구독 사용량 한도에 걸린 것으로 보입니다. '
+            + '잠시 뒤 다시 시도하거나 API 키 방식을 쓰십시오.';
+    }
+    return head + s;
 }
 
 /* 완료된 항목에서 글을 꺼낸다. 어시스턴트 발언만 쓴다.
@@ -336,13 +379,16 @@ function runTurn(c, threadId, input, model) {
     return new Promise((resolve, reject) => {
         let settled = false;
         const state = {
-            turnId: null, deltas: '', items: [],
+            turnId: null, deltas: '', items: [], fatalError: null, lastError: null,
             done: () => {
                 if (settled) return;
                 settled = true; clearTimeout(timer); c.turn = null;
                 const text = (state.items.join(NL).trim() || state.deltas.trim());
-                if (!text) reject(new Error('Codex 가 빈 답을 돌려주었습니다.'));
-                else resolve(text);
+                if (text) { resolve(text); return; }
+                // 턴은 성공으로 끝났는데 글이 없다. 중간에 본 오류라도 함께 알린다.
+                const why = state.fatalError || state.lastError;
+                reject(new Error('Codex 가 빈 답을 돌려주었습니다.'
+                    + (why ? ' 중간 오류: ' + why : '')));
             },
             fail: (e) => {
                 if (settled) return;
@@ -368,7 +414,9 @@ function runTurn(c, threadId, input, model) {
             ...(process.env.CODEX_EFFORT ? { effort: process.env.CODEX_EFFORT } : {})
         };
         c.request('turn/start', params).then(r => {
-            if (r && (r.turnId || r.turn_id)) state.turnId = r.turnId || r.turn_id;
+            // 실제 응답은 {turn:{id}} 로 온다. 예전 표기도 함께 받아 둔다.
+            const tid = r && (r.turnId || r.turn_id || (r.turn && r.turn.id));
+            if (tid) state.turnId = tid;
         }, e => state.fail(e));
     });
 }

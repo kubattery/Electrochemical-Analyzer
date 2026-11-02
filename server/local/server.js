@@ -41,6 +41,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { callCli, cliStatus, CLI_SPECS } from './cli-bridge.js';
@@ -114,7 +115,24 @@ const DEFAULT_ORIGINS = [
 function allowedOrigins() {
     const extra = (process.env.ALLOWED_ORIGINS || '')
         .split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
-    return DEFAULT_ORIGINS.concat(extra);
+    // LAN 에 열었다면 이 서버 자신의 주소로 사이트를 여는 경우도 받아 준다
+    const lan = bindHost() === '0.0.0.0'
+        ? lanAddresses().map(ip => 'http://' + ip + ':' + PORT)
+        : [];
+    return DEFAULT_ORIGINS.concat(lan).concat(extra);
+}
+
+/* 같은 네트워크에서 쓸 때 안내할 주소. 다른 PC 에서는 서버의 IP 로 들어와야 하는데
+   그 값을 사람이 ipconfig 로 찾게 두면 번거롭다. */
+function lanAddresses() {
+    const out = [];
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+        for (const ni of ifaces[name] || []) {
+            if (ni.family === 'IPv4' && !ni.internal) out.push(ni.address);
+        }
+    }
+    return out;
 }
 
 function corsFor(req) {
@@ -399,9 +417,20 @@ http.createServer((req, res) => {
     if (host === '127.0.0.1') {
         console.log('  이 PC 에서만 접속됩니다. 구독 CLI 중계는 혼자 쓰는 용도이므로');
         console.log('  다른 PC 에 열지 않습니다. 여러 사람이 쓰려면 API 키 방식을 쓰세요.');
+        console.log('  내 다른 PC 에서도 쓰려면 ALLOW_LAN=1 을 주고 실행하세요.');
     } else {
-        console.log('  같은 네트워크의 다른 PC 에서도 접속됩니다. 외부 인터넷에는 노출하지 마세요.');
-        console.log('  (이 서버에는 인증이 없어 주소를 아는 누구나 쓸 수 있습니다)');
+        console.log('  같은 네트워크의 다른 PC 에서 접속할 주소');
+        const ips = lanAddresses();
+        if (ips.length) {
+            for (const ip of ips) console.log('    http://' + ip + ':' + PORT + '/');
+        } else {
+            console.log('    (네트워크 주소를 찾지 못했습니다. ipconfig 로 IPv4 주소를 확인하세요)');
+        }
+        console.log('    그 PC 에서는 이 주소로 웹사이트를 여십시오. GitHub Pages 에서');
+        console.log('    이 주소를 부르면 브라우저가 막습니다. https 페이지가 http 를 부르는');
+        console.log('    것은 localhost 만 예외이고 사설 IP 는 예외가 아니기 때문입니다.');
+        console.log('');
+        console.log('  외부 인터넷에는 노출하지 마세요. 인증이 없어 주소를 아는 누구나 씁니다.');
     }
     console.log('');
 });

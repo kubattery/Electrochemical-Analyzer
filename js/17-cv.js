@@ -1501,8 +1501,8 @@
 
     if (controls) {
       var html =
-        '<label>파일 </label>' +
-        '<select id="k1k2File" class="select-field">';
+        '<label style="font-size:11px;color:var(--text-muted);">파일 </label>' +
+        '<select id="k1k2File" class="select-field" style="height:30px;margin-bottom:0;">';
 
       cvFiles.forEach(function (file) {
         html +=
@@ -1513,8 +1513,8 @@
 
       html +=
         '</select> ' +
-        '<label>스윕 </label>' +
-        '<select id="k1k2Branch" class="select-field">' +
+        '<label style="font-size:11px;color:var(--text-muted);margin-left:8px;">스윕 </label>' +
+        '<select id="k1k2Branch" class="select-field" style="height:30px;margin-bottom:0;">' +
         '<option value="anodic"' +
         (_k1k2.branch === 'anodic' ? ' selected' : '') +
         '>산화</option>' +
@@ -1574,12 +1574,13 @@
     }
 
     var chips =
-      '<div style="margin-bottom:8px;">' +
-      '피팅에 사용할 스캔레이트: ';
+      '<div style="font-size:11px;color:var(--text-muted);margin:2px 0 6px;">' +
+      '피팅에 사용할 스캔레이트(체크 해제 시 제외):</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">';
 
     (out.allRates || out.rates).forEach(function (rate) {
       chips +=
-        '<label style="margin-right:10px;">' +
+        '<label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">' +
         '<input type="checkbox" data-rate="' + rate + '"' +
         (!_k1k2.excluded[rate] ? ' checked' : '') +
         '> ' + rate + ' mV/s</label>';
@@ -1590,7 +1591,7 @@
     if (out.tooFew) {
       result.innerHTML =
         chips +
-        '<div>피팅 진단에는 서로 다른 스캔레이트가 ' +
+        '<div style="font-size:12px;color:#fbbf24;">피팅 진단에는 서로 다른 스캔레이트가 ' +
         '최소 3개 필요합니다.</div>';
 
       bindRateChecks();
@@ -1601,12 +1602,12 @@
     var bWindows = computeBValues(f);
 
     function bCell(value) {
-      if (!value) return '데이터 부족';
+      if (!value) return '<span style="color:#6b7280;">데이터 부족</span>';
 
       return (
-        value.b.toFixed(4) +
-        ' (R²=' + value.r2.toFixed(4) +
-        ', n=' + value.n + ')'
+        '<b>' + value.b.toFixed(4) + '</b>' +
+        ' <span style="color:#9ca3af;">(R²=' + value.r2.toFixed(4) +
+        ', n=' + value.n + ')</span>'
       );
     }
 
@@ -1617,41 +1618,46 @@
 
       if (w.type !== 'cathodic') {
         bRows +=
-          '<tr><td>' + range +
-          '</td><td>산화</td><td>' +
+          '<tr><td style="padding:3px 6px;">' + range +
+          '</td><td style="padding:3px 6px;color:#f59e0b;">산화</td>' +
+          '<td style="padding:3px 6px;">' +
           bCell(w.anodic) + '</td></tr>';
       }
 
       if (w.type !== 'anodic') {
         bRows +=
-          '<tr><td>' + range +
-          '</td><td>환원</td><td>' +
+          '<tr><td style="padding:3px 6px;">' + range +
+          '</td><td style="padding:3px 6px;color:#60a5fa;">환원</td>' +
+          '<td style="padding:3px 6px;">' +
           bCell(w.cathodic) + '</td></tr>';
       }
     });
 
     var bHtml = bRows
       ? (
-          '<div><b>구간별 peak-based b value</b></div>' +
-          '<table style="width:100%;font-size:12px;">' +
-          '<thead><tr><th>전압 구간</th>' +
-          '<th>Sweep</th><th>b value</th></tr></thead>' +
+          '<div style="font-size:13px;font-weight:600;margin:4px 0;">구간별 peak-based b value</div>' +
+          '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;">' +
+          '<thead><tr style="color:#9ca3af;text-align:left;border-bottom:1px solid rgba(255,255,255,0.12);">' +
+          '<th style="padding:3px 6px;">전압 구간</th>' +
+          '<th style="padding:3px 6px;">Sweep</th>' +
+          '<th style="padding:3px 6px;">b value</th></tr></thead>' +
           '<tbody>' + bRows + '</tbody></table>'
         )
       : (
-          '<div>전체 sweep 대표 peak의 b value: ' +
+          '<div style="font-size:12px;">전체 sweep 대표 peak의 b value: ' +
           format(out.bVal) +
           '. Fe/Mn을 분리하려면 피크 검출 구간을 설정하세요.</div>'
         );
 
     var contributionRows = out.contribution.map(function (x) {
       return (
-        '<tr><td>' + x.rate + ' mV/s</td><td>' +
+        '<tr><td style="padding:3px 6px;">' + x.rate + ' mV/s</td>' +
+        '<td style="padding:3px 6px;">' +
         (x.needsReview ? '검토 필요' : format(x.pct) + '%') +
-        '</td><td>' +
+        '</td><td style="padding:3px 6px;">' +
         (x.needsReview ? '검토 필요' : format(x.diffPct) + '%') +
-        '</td><td>' + format(x.oppositePct) + '%' +
-        '</td><td>' + format(x.errorPct) + '%' +
+        '</td><td style="padding:3px 6px;">' + format(x.oppositePct) + '%' +
+        '</td><td style="padding:3px 6px;">' + format(x.errorPct) + '%' +
         '</td></tr>'
       );
     }).join('');
@@ -1671,20 +1677,22 @@
     result.innerHTML =
       chips +
       bHtml +
-      '<div style="margin-top:12px;"><b>Dunn 분석</b></div>' +
-      '<table style="width:100%;font-size:12px;">' +
-      '<thead><tr>' +
-      '<th>Scan rate</th><th>Capacitive</th>' +
-      '<th>Diffusion</th><th>반대 성분 면적비</th>' +
-      '<th>재구성 오차</th>' +
+      '<div style="font-size:13px;font-weight:600;margin:12px 0 4px;">Dunn 분석</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+      '<thead><tr style="color:#9ca3af;text-align:left;border-bottom:1px solid rgba(255,255,255,0.12);">' +
+      '<th style="padding:3px 6px;">Scan rate</th>' +
+      '<th style="padding:3px 6px;color:#f59e0b;">Capacitive</th>' +
+      '<th style="padding:3px 6px;color:#60a5fa;">Diffusion</th>' +
+      '<th style="padding:3px 6px;">반대 성분 면적비</th>' +
+      '<th style="padding:3px 6px;">재구성 오차</th>' +
       '</tr></thead><tbody>' +
       contributionRows +
       '</tbody></table>' +
-      '<details style="margin-top:10px;font-size:11px;">' +
+      '<details style="margin-top:10px;font-size:11px;color:var(--text-muted);">' +
       '<summary>진단값 보기 — 확정 기여율 아님</summary>' +
       diagnostics +
       '</details>' +
-      '<div style="margin-top:10px;font-size:11px;line-height:1.6;">' +
+      '<div style="margin-top:10px;font-size:11px;line-height:1.6;color:var(--text-muted);">' +
       '직접 QR 최소제곱 · 공통 전압 ' +
       out.bounds[0].toFixed(3) + '–' +
       out.bounds[1].toFixed(3) + ' V · 약 1 mV 격자.<br>' +

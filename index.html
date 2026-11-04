@@ -833,6 +833,14 @@
                             <input type="file" id="cvFileInput" accept=".xlsx,.xls,.csv,.txt" multiple hidden>
                         </div>
                         <div id="cvStatus" style="font-size:12px; color:var(--text-muted); margin-top:-6px;">CV 파일을 업로드하세요.</div>
+                        <!-- 전류 표시 단위 (A/g 선택 시 파일별 질량 mg 필요) -->
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <label style="font-size:11px; color:var(--text-muted);">전류 단위</label>
+                            <select id="cvUnitSel" class="select-field" style="margin-bottom:0; height:30px; width:150px;">
+                                <option value="mA">mA</option>
+                                <option value="A/g">A/g (질량당, mg 입력)</option>
+                            </select>
+                        </div>
                         <!-- 로드된 파일 목록: 파일별 색상 · 사이클 개별 선택 · 제거 -->
                         <div id="cvFileList" style="display:flex; flex-direction:column; gap:8px;"></div>
                         <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:14px; display:flex; flex-direction:column; align-items:center;">

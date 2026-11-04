@@ -2,22 +2,20 @@
  * HC-Analyzer  ·  js/17-cv.js   (CV = Cyclic Voltammetry 분석 · 독립 모듈)
  * CV 파일(전압/전류)을 CV 탭에서 업로드 → 사이클 분리 → I-V 곡선 → 사이클 드롭다운
  * → 산화/환원 피크 전압 자동 검출. 기존 충방전 코드는 건드리지 않음. 엑셀은 js/xlsx-worker.js 재사용.
- *
- * [사이클 분리 방식]
- *  - 파일에 'Cycle No.'(사이클 번호) 컬럼이 있으면 → 그 번호를 그대로 사용(측정기 기록과 100% 일치).
- *  - 없으면 → 전압 스윕 정점(vertex) 기반 자동 검출로 폴백(구형 Index/Voltage/Current 폼 호환).
- *
- * [다중 파일 비교]
- *  - 여러 CV 파일을 올려 한 그래프에 겹쳐 볼 수 있다. 파일마다 색이 다르게 표시된다.
- *  - 사이클은 '파일마다 개별 선택'한다(각 파일 행의 드롭다운). 피크 표도 파일별로 나온다.
  * ============================================================================ */
 (function () {
   'use strict';
-  // 파일별 상태: { id, name, color, cycles:[{num,V,I,span,npts}], selNum }
   var cvFiles = [], cvChart = null, cvWorker = null, cvJob = 0, _fid = 0;
-  var cvWindows = [];   // 사용자 지정 피크 검출 전압 구간 목록 [{min, max}]
+  var cvWindows = [];
   var _queue = [], _parsing = false;
-  // 파일별 구분 색상 팔레트 (어두운 배경에서 잘 구분되는 색)
+  // 전류 표시 단위: 'mA' 또는 'A/g'(질량당). 파일별 질량 f.massMg(mg) 로 환산.
+  var cvUnit = 'mA';
+  function toUnit(iA, f) {
+    if (cvUnit === 'A/g') { var m = f ? parseFloat(f.massMg) : NaN; if (isNaN(m) || m <= 0) return null; return iA / (m / 1000); }
+    return iA * 1000; // mA
+  }
+  function unitSuffix() { return cvUnit === 'A/g' ? ' A/g' : ' mA'; }
+  function unitAxis() { return cvUnit === 'A/g' ? 'Current (A g⁻¹)' : 'Current (mA)'; }
   var CV_COLORS = ['#f59e0b', '#60a5fa', '#34d399', '#f472b6', '#a78bfa', '#fbbf24', '#22d3ee', '#fb7185', '#4ade80', '#c084fc'];
 
   function $(id) { return document.getElementById(id); }
@@ -85,22 +83,21 @@
     return rows;
   }
 
-  // 파싱 결과(2차원 배열)를 받아 파일 항목을 만든다
   function onRows(rows, filename) {
     var res = computeCycles(rows);
     if (!res) { setStatus(filename + ': 전압/전류 컬럼을 찾지 못했거나 데이터가 부족합니다.'); parseNext(); return; }
     var color = CV_COLORS[cvFiles.length % CV_COLORS.length];
     var entry = { id: 'cv' + Date.now() + '_' + (++_fid), name: filename, color: color, cycles: res.cycles, selNum: res.defaultNum };
-    entry.rateData = buildRateData(rows);   // k1/k2 분석용: Time·Voltage로 스캔레이트 구간 자동 분리
+    entry.rateData = buildRateData(rows);
     cvFiles.push(entry);
-    registerCvDataset(entry);   // 데이터 라이브러리(사이드바)에 등록
+    registerCvDataset(entry);
     refreshFileList();
     renderAll();
     setStatus('로드됨: ' + cvFiles.length + '개 파일');
     parseNext();
   }
 
-  // ---- 사이클 계산 (DOM/상태 건드리지 않는 순수 함수) ----
+  // ---- 사이클 계산 ----
   function computeCycles(rows) {
     if (!rows || rows.length < 3) return null;
     var headerIdx = -1, vCol = -1, iCol = -1, cCol = -1, r, c;
@@ -111,7 +108,6 @@
         var s = String(row[c] == null ? '' : row[c]).toLowerCase().trim();
         if (vc < 0 && (s.indexOf('voltage') >= 0 || s.indexOf('전압') >= 0 || s.indexOf('v vs') >= 0 || s === 'v' || s.indexOf('potential') >= 0)) vc = c;
         if (ic < 0 && (s.indexOf('current') >= 0 || s.indexOf('전류') >= 0 || s === 'i' || s.indexOf('(a)') >= 0 || s.indexOf('(ma)') >= 0 || s.indexOf('i(') >= 0)) ic = c;
-        // 'Cycle No.'(사이클 번호) 컬럼만 인식 — 'Cycle Time' 은 제외
         if (cyc < 0 && s.indexOf('cycle') >= 0 && (s.indexOf('no') >= 0 || s.indexOf('num') >= 0 || s.indexOf('번호') >= 0 || s.indexOf('index') >= 0)) cyc = c;
       }
       if (vc >= 0 && ic >= 0) { headerIdx = r; vCol = vc; iCol = ic; cCol = cyc; break; }
@@ -129,7 +125,6 @@
     return hasC ? cyclesFromColumn(V, I, C) : cyclesAuto(V, I);
   }
 
-  // [신규] 파일에 기록된 'Cycle No.' 값을 그대로 사용
   function cyclesFromColumn(V, I, C) {
     var groups = {}, order = [], k;
     for (k = 0; k < V.length; k++) {
@@ -156,7 +151,6 @@
     return { cycles: cycles, defaultNum: defaultNum };
   }
 
-  // [폴백] 사이클 번호가 없을 때: 전압 스윕 정점으로 자동 검출
   function cyclesAuto(V, I) {
     var cyc = detectCVCycles(V, I), cycles = [];
     cyc.forEach(function (c) {
@@ -168,8 +162,6 @@
   }
 
   function detectCVCycles(V, I) {
-    // 정점(vertex) 기반 검출: 전압이 상단/하단 정점 부근에 도달하는 지점을 정점으로 잡고,
-    // 하단정점 → 상단정점 → 하단정점 을 한 사이클(닫힌 루프)로 묶는다. (노이즈에 견고)
     var n = V.length, k;
     var vmin = Infinity, vmax = -Infinity;
     for (k = 0; k < n; k++) { if (V[k] < vmin) vmin = V[k]; if (V[k] > vmax) vmax = V[k]; }
@@ -214,7 +206,7 @@
     return { v: v, i: ii };
   }
 
-  // ---- 파일 목록 UI (색상 · 사이클 개별 선택 · 제거) ----
+  // ---- 파일 목록 UI ----
   function refreshFileList() {
     var el = $('cvFileList'); if (!el) return;
     el.innerHTML = '';
@@ -234,13 +226,34 @@
       f.cycles.forEach(function (cc) { var o = document.createElement('option'); o.value = cc.num; o.textContent = cc.num + ' 사이클'; sel.appendChild(o); });
       sel.value = f.selNum;
       sel.addEventListener('change', function () { f.selNum = parseFloat(this.value); renderAll(); });
+      // 질량(mg) 입력 — A/g 환산용(파일별)
+      var mlab = document.createElement('span');
+      mlab.textContent = '질량(mg)'; mlab.style.cssText = 'font-size:11px; color:var(--text-muted);';
+      var mass = document.createElement('input');
+      mass.type = 'number'; mass.step = '0.01'; mass.min = '0'; mass.placeholder = 'mg';
+      mass.className = 'select-field'; mass.style.cssText = 'margin-bottom:0; height:30px; width:72px;';
+      if (f.massMg != null && !isNaN(f.massMg)) mass.value = f.massMg;
+      mass.addEventListener('input', function () { var v = parseFloat(this.value); f.massMg = isNaN(v) ? null : v; persistMass(f); renderAll(); });
       var rm = document.createElement('button');
       rm.textContent = '✕'; rm.title = '이 파일 제거';
       rm.style.cssText = 'background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px;';
       rm.addEventListener('click', function () { removeFile(f.id); });
-      row.appendChild(sw); row.appendChild(nm); row.appendChild(lab); row.appendChild(sel); row.appendChild(rm);
+      row.appendChild(sw); row.appendChild(nm); row.appendChild(lab); row.appendChild(sel);
+      row.appendChild(mlab); row.appendChild(mass); row.appendChild(rm);
       el.appendChild(row);
     });
+  }
+
+  // 질량 변경을 라이브러리 저장본(cvPayload)에도 반영
+  function persistMass(f) {
+    if (typeof datasetLibrary === 'undefined') return;
+    for (var i = 0; i < datasetLibrary.length; i++) {
+      if (datasetLibrary[i].id === f.id) {
+        if (datasetLibrary[i].cvPayload) datasetLibrary[i].cvPayload.massMg = f.massMg;
+        if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(datasetLibrary[i])).catch(function () {}); } catch (e) {} }
+        break;
+      }
+    }
   }
 
   function removeFile(id) {
@@ -248,7 +261,6 @@
     refreshFileList();
     renderAll();
     setStatus(cvFiles.length ? (cvFiles.length + '개 파일') : 'CV 파일을 업로드하세요.');
-    // 데이터 라이브러리 항목도 함께 제거(동기화)
     if (typeof datasetLibrary !== 'undefined') {
       var idx = -1, i;
       for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { idx = i; break; } }
@@ -266,7 +278,6 @@
     return null;
   }
 
-  // 라이브러리 체크박스(compareEnabled)로 표시 여부 판단. 라이브러리에 없으면 기본 표시.
   function isEnabled(f) {
     if (typeof datasetLibrary === 'undefined') return true;
     for (var i = 0; i < datasetLibrary.length; i++) {
@@ -275,15 +286,17 @@
     return true;
   }
 
-  // ---- 그래프 + 피크표 렌더 (체크된 파일만 오버레이) ----
+  // ---- 그래프 + 피크표 렌더 ----
   function renderAll() {
-    var datasets = [], xmin = Infinity, xmax = -Infinity;
+    var datasets = [], xmin = Infinity, xmax = -Infinity, needMass = 0;
     cvFiles.forEach(function (f) {
-      if (!isEnabled(f)) return;                 // 라이브러리 체크 해제 → 그래프에서 숨김
+      if (!isEnabled(f)) return;
       var cc = getCycle(f, f.selNum); if (!cc) return;
+      if (cvUnit === 'A/g' && (f.massMg == null || isNaN(parseFloat(f.massMg)) || parseFloat(f.massMg) <= 0)) { needMass++; return; }
       var pts = [], j;
       for (j = 0; j < cc.V.length; j++) {
-        pts.push({ x: cc.V[j], y: cc.I[j] * 1000 });
+        var y = toUnit(cc.I[j], f); if (y === null) continue;
+        pts.push({ x: cc.V[j], y: y });
         if (cc.V[j] < xmin) xmin = cc.V[j];
         if (cc.V[j] > xmax) xmax = cc.V[j];
       }
@@ -296,6 +309,7 @@
     renderCVChart(datasets, xmin, xmax);
     renderPeakTable();
     renderK1K2();
+    if (cvUnit === 'A/g' && needMass > 0) setStatus('A/g 표시: 질량 미입력 파일 ' + needMass + '개는 그래프에서 숨김(질량 입력 시 표시)');
   }
 
   function renderCVChart(datasets, xmin, xmax) {
@@ -303,9 +317,7 @@
     var ctx = el.getContext('2d');
     if (cvChart) { cvChart.destroy(); cvChart = null; }
     if (!datasets.length) return;
-    // 데이터 기준 x축(전압) 범위를 명시 → CV 루프(시작·끝 전압 동일)에서 축 붕괴 방지
     if (!isFinite(xmin)) { xmin = 0; xmax = 1; }
-    // 설정한 전압 구간을 그래프에 반투명 밴드로 표시
     var bandPlugin = {
       id: 'cvWindowBands',
       beforeDatasetsDraw: function (chart) {
@@ -330,7 +342,7 @@
         interaction: { mode: 'nearest', intersect: false },
         scales: {
           x: { type: 'linear', min: xmin, max: xmax, title: { display: true, text: 'Voltage (V)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
-          y: { title: { display: true, text: 'Current (mA)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
+          y: { title: { display: true, text: unitAxis(), color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
         },
         plugins: {
           legend: { display: true, labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } } },
@@ -385,7 +397,6 @@
   }
 
   function detectPeaks(cc) {
-    // 산화(anodic)=양(+)전류 구간, 환원(cathodic)=음(-)전류 구간으로 나눠 자동 검출
     var aV = [], aI = [], cV = [], cI = [], k, SENS = 0.08;
     for (k = 0; k < cc.V.length; k++) {
       if (cc.I[k] > 0) { aV.push(cc.V[k]); aI.push(cc.I[k]); }
@@ -394,7 +405,6 @@
     return { anodic: findPeaks(aV, aI, true, SENS), cathodic: findPeaks(cV, cI, false, SENS) };
   }
 
-  // 유효한(숫자 min/max) 전압 구간만 추림. type: 'anodic'|'cathodic'|'both'(기본)
   function validWindows() {
     return cvWindows.filter(function (w) {
       return w && w.min != null && w.max != null && !isNaN(w.min) && !isNaN(w.max) && w.min !== w.max;
@@ -402,8 +412,6 @@
       .sort(function (a, b) { return a.min - b.min; });
   }
 
-  // [신규] 사용자 지정 전압 구간마다 선택한 종류의 피크를 찾는다.
-  //   type='anodic' → 산화(+I 최대)만, 'cathodic' → 환원(-I 최소)만, 'both' → 둘 다.
   function peaksInWindows(cc, wins) {
     return wins.map(function (w) {
       var aBest = null, cBest = null, k;
@@ -417,9 +425,8 @@
       return { min: w.min, max: w.max, type: w.type, anodic: aBest, cathodic: cBest };
     });
   }
-  
-  // [신규] 구간 × '스캔레이트별' 피크 검출. rateData(스캔레이트별 스윕)를 사용.
-  //   반환: [{min,max,type, rates:[{rate, anodic:{v,i}|null, cathodic:{v,i}|null}, …]}]
+
+  // 구간 × '스캔레이트별' 피크 검출. rateData 사용.
   function peaksInWindowsByRate(f, wins) {
     var rd = f.rateData && f.rateData[f.selNum]; if (!rd) return null;
     function byRateOf(arr) { var m = {}; (arr || []).forEach(function (s) { if (!m[s.rate]) m[s.rate] = s; }); return m; }
@@ -451,9 +458,11 @@
     });
   }
 
-  function fmtPeak(p) {
+  function fmtPeak(p, f) {
     if (!p) return '<span style="color:#6b7280;">-</span>';
-    return p.v.toFixed(3) + ' V <span style="color:#9ca3af;">(' + (p.i * 1000).toFixed(3) + ' mA)</span>';
+    var y = toUnit(p.i, f);
+    if (y === null) return p.v.toFixed(3) + ' V <span style="color:#6b7280;">(질량 입력 필요)</span>';
+    return p.v.toFixed(3) + ' V <span style="color:#9ca3af;">(' + y.toFixed(3) + unitSuffix() + ')</span>';
   }
 
   function renderPeakTable() {
@@ -469,7 +478,6 @@
       if (wins.length) {
         var byRate = peaksInWindowsByRate(f, wins);
         if (byRate) {
-          // 구간 × 스캔레이트별 피크
           html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
             + '<thead><tr style="color:#9ca3af; text-align:left; border-bottom:1px solid rgba(255,255,255,0.12);"><th style="padding:3px 6px;">Scan rate</th><th style="padding:3px 6px;color:#f59e0b;">산화 (Anodic)</th><th style="padding:3px 6px;color:#60a5fa;">환원 (Cathodic)</th></tr></thead><tbody>';
           byRate.forEach(function (wrow) {
@@ -478,13 +486,12 @@
               + wrow.min.toFixed(2) + ' ~ ' + wrow.max.toFixed(2) + ' V <span style="color:#9ca3af;font-weight:400;">· ' + typeLabel + '</span></td></tr>';
             wrow.rates.forEach(function (rr) {
               html += '<tr><td style="padding:3px 6px;">' + rr.rate + ' mV/s</td>'
-                + '<td style="padding:3px 6px;">' + (wrow.type !== 'cathodic' ? fmtPeak(rr.anodic) : '<span style="color:#6b7280;">-</span>') + '</td>'
-                + '<td style="padding:3px 6px;">' + (wrow.type !== 'anodic' ? fmtPeak(rr.cathodic) : '<span style="color:#6b7280;">-</span>') + '</td></tr>';
+                + '<td style="padding:3px 6px;">' + (wrow.type !== 'cathodic' ? fmtPeak(rr.anodic, f) : '<span style="color:#6b7280;">-</span>') + '</td>'
+                + '<td style="padding:3px 6px;">' + (wrow.type !== 'anodic' ? fmtPeak(rr.cathodic, f) : '<span style="color:#6b7280;">-</span>') + '</td></tr>';
             });
           });
           html += '</tbody></table>';
         } else {
-          // rateData 없는 구형 파일: 오버레이 곡선에서 구간당 피크 1개 (fallback)
           var rows = cc ? peaksInWindows(cc, wins) : [];
           html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">※ 이 파일은 스캔레이트 분리 불가(Time 컬럼 없음) → 구간당 대표 피크만 표시</div>';
           html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
@@ -492,21 +499,21 @@
           rows.forEach(function (r) {
             var range = r.min.toFixed(2) + ' ~ ' + r.max.toFixed(2) + ' V';
             if (r.type !== 'cathodic') {
-              html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#f59e0b;font-weight:600;">산화 (Anodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.anodic) + '</td></tr>';
+              html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#f59e0b;font-weight:600;">산화 (Anodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.anodic, f) + '</td></tr>';
             }
             if (r.type !== 'anodic') {
-              html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#60a5fa;font-weight:600;">환원 (Cathodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.cathodic) + '</td></tr>';
+              html += '<tr><td style="padding:3px 6px;">' + range + '</td><td style="padding:3px 6px;color:#60a5fa;font-weight:600;">환원 (Cathodic)</td><td style="padding:3px 6px;">' + fmtPeak(r.cathodic, f) + '</td></tr>';
             }
           });
           html += '</tbody></table>';
         }
       } else {
-        // 구간 미설정: 기존 자동 검출
         var pk = cc ? detectPeaks(cc) : { anodic: [], cathodic: [] };
         function rowsFor(list, label, color) {
           if (!list.length) return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;color:#6b7280;" colspan="2">검출된 피크 없음</td></tr>';
           return list.map(function (p) {
-            return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;">' + p.v.toFixed(3) + ' V</td><td style="padding:3px 6px;color:#9ca3af;">' + (p.i * 1000).toFixed(3) + ' mA</td></tr>';
+            var y = toUnit(p.i, f), cur = (y === null) ? '질량 입력 필요' : (y.toFixed(3) + unitSuffix());
+            return '<tr><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + label + '</td><td style="padding:3px 6px;">' + p.v.toFixed(3) + ' V</td><td style="padding:3px 6px;color:#9ca3af;">' + cur + '</td></tr>';
           }).join('');
         }
         html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
@@ -540,7 +547,6 @@
       mx.className = 'select-field'; mx.style.cssText = 'margin-bottom:0; height:30px; width:90px;';
       if (w.max != null && !isNaN(w.max)) mx.value = w.max;
       mx.addEventListener('input', function () { var v = parseFloat(this.value); cvWindows[idx].max = isNaN(v) ? null : v; renderAll(); });
-      // 피크 종류 선택: 산화 / 환원 / 둘 다
       var kind = document.createElement('select');
       kind.className = 'select-field'; kind.style.cssText = 'margin-bottom:0; height:30px; width:90px;';
       [['anodic', '산화'], ['cathodic', '환원'], ['both', '둘 다']].forEach(function (o) {
@@ -564,16 +570,11 @@
   }
 
   // ==========================================================================
-  // k1/k2 (Dunn) 분석 — capacitive vs diffusion 기여도 정량 분리
-  //   i(V) = k1(V)·v + k2(V)·v^1/2   (v = scan rate)
-  //   → i/v^1/2 = k1·v^1/2 + k2  의 전압별 선형 회귀로 k1, k2 산출.
-  //   스캔레이트는 파일의 Time·Voltage 로 자동 계산(ΔV/Δt), 한 사이클에 섞인 여러 rate를 분리.
+  // k1/k2 (Dunn) 분석
   // ==========================================================================
-  var _k1k2 = { fileId: null, branch: 'anodic', excluded: {} };  // excluded: {rate:true}
+  var _k1k2 = { fileId: null, branch: 'anodic', excluded: {} };
   var k1k2Chart = null;
 
-  // 파일 원본 행에서 스캔레이트 구간을 만든다.
-  //  반환: { cycleNum: { anodic:[{rate,V[],I[]}], cathodic:[...] } }  (Time 컬럼 없으면 null)
   function buildRateData(rows) {
     if (!rows || rows.length < 3) return null;
     var headerIdx = -1, tCol = -1, vCol = -1, iCol = -1, cCol = -1, sCol = -1, r, c;
@@ -590,9 +591,7 @@
       }
       if (vc >= 0 && ic >= 0 && tc >= 0) { headerIdx = r; tCol = tc; vCol = vc; iCol = ic; cCol = cyc; sCol = stp; break; }
     }
-    if (tCol < 0 || vCol < 0 || iCol < 0) return null;   // Time 없으면 스캔레이트 자동계산 불가
-
-    // 행 수집
+    if (tCol < 0 || vCol < 0 || iCol < 0) return null;
     var T = [], V = [], I = [], C = [], S = [];
     for (var r2 = headerIdx + 1; r2 < rows.length; r2++) {
       var row2 = rows[r2]; if (!row2) continue;
@@ -603,8 +602,6 @@
       S.push(sCol >= 0 ? row2[sCol] : 0);
     }
     if (V.length < 20) return null;
-
-    // 사이클별 처리
     var byCyc = {}, order = [], k;
     for (k = 0; k < V.length; k++) {
       var cn = isNaN(C[k]) ? 0 : C[k];
@@ -614,12 +611,9 @@
     var out = {};
     order.forEach(function (cn) {
       var idx = byCyc[cn];
-      // 사이클 전압 범위
       var vmn = Infinity, vmx = -Infinity, j;
       for (j = 0; j < idx.length; j++) { var vv = V[idx[j]]; if (vv < vmn) vmn = vv; if (vv > vmx) vmx = vv; }
       var cycSpan = vmx - vmn; if (cycSpan <= 0) return;
-      // 이 사이클에 Step 정보가 있으면 스텝 변화로만 분할(가장 견고),
-      // 없으면 전압 스윕 방향 반전(정점)으로 분할.
       var hasStep = false;
       for (j = 1; j < idx.length; j++) { if (S[idx[j]] !== S[idx[0]]) { hasStep = true; break; } }
       var segs = [], segStart = 0;
@@ -628,7 +622,6 @@
           if (S[idx[j]] !== S[idx[j - 1]]) { segs.push([segStart, j - 1]); segStart = j; }
         }
       } else {
-        // 정점 기반: 전압이 상단/하단 임계에 도달할 때마다 방향 전환점을 경계로
         var hiThr = vmx - cycSpan * 0.1, loThr = vmn + cycSpan * 0.1, zone = 0;
         for (j = 0; j < idx.length; j++) {
           var vv2 = V[idx[j]];
@@ -642,12 +635,11 @@
         var a = sg[0], b = sg[1]; if (b - a < 10) return;
         var svmn = Infinity, svmx = -Infinity, p;
         for (p = a; p <= b; p++) { var x = V[idx[p]]; if (x < svmn) svmn = x; if (x > svmx) svmx = x; }
-        if (svmx - svmn < 0.7 * cycSpan) return;               // 전 구간 스윕만 사용(formation 조각 제외)
+        if (svmx - svmn < 0.7 * cycSpan) return;
         var dt = T[idx[b]] - T[idx[a]]; if (dt <= 0) return;
-        var rate = Math.round((svmx - svmn) / dt * 1000 * 100) / 100;   // mV/s, 소수 2자리
+        var rate = Math.round((svmx - svmn) / dt * 1000 * 100) / 100;
         if (rate <= 0) return;
         var up = V[idx[b]] > V[idx[a]];
-        // V 기준 정렬 + 다운샘플
         var pts = [];
         for (p = a; p <= b; p++) pts.push([V[idx[p]], I[idx[p]]]);
         pts.sort(function (m, n) { return m[0] - n[0]; });
@@ -667,19 +659,16 @@
     var t = (x - xs[lo]) / (xs[hi] - xs[lo]); return ys[lo] + t * (ys[hi] - ys[lo]);
   }
 
-  // k1/k2 계산. 반환 null 또는 결과객체.
   function computeK1K2(f) {
     if (!f || !f.rateData) return null;
     var rd = f.rateData[f.selNum]; if (!rd) return null;
     var branchArr = (_k1k2.branch === 'cathodic') ? rd.cathodic : rd.anodic;
     if (!branchArr || !branchArr.length) return null;
-    // rate별 대표 스윕(같은 rate 여러개면 첫 번째) + 제외 적용
     var byRate = {};
     branchArr.forEach(function (sg) { if (!byRate[sg.rate]) byRate[sg.rate] = sg; });
     var rates = Object.keys(byRate).map(parseFloat).sort(function (a, b) { return a - b; });
     rates = rates.filter(function (r) { return !_k1k2.excluded[r]; });
     if (rates.length < 2) return { rates: rates, tooFew: true };
-    // 공통 전압 그리드
     var lo = -Infinity, hi = Infinity;
     rates.forEach(function (r) { var V = byRate[r].V; if (V[0] > lo) lo = V[0]; if (V[V.length - 1] < hi) hi = V[V.length - 1]; });
     lo += 0.02; hi -= 0.02; if (hi <= lo) return null;
@@ -687,7 +676,6 @@
     for (g = 0; g < N; g++) grid.push(lo + (hi - lo) * g / (N - 1));
     var varr = rates.map(function (r) { return r / 1000; }), sq = varr.map(Math.sqrt);
     var imat = rates.map(function (r) { var sg = byRate[r]; return grid.map(function (x) { return _interp(x, sg.V, sg.I); }); });
-    // 전압별 최소제곱: 설계행렬 [v, sqrt(v)]
     var k1 = new Array(N), k2 = new Array(N);
     var Sxx = 0, Sxz = 0, Szz = 0;
     for (var j = 0; j < rates.length; j++) { Sxx += varr[j] * varr[j]; Sxz += varr[j] * sq[j]; Szz += sq[j] * sq[j]; }
@@ -698,14 +686,12 @@
       k1[g] = (Sxy * Szz - Szy * Sxz) / det;
       k2[g] = (Sxx * Szy - Sxz * Sxy) / det;
     }
-    // 기여도(%) — 전하 적분 기준
     function trapzAbs(arr) { var s = 0; for (var i = 1; i < N; i++) s += (Math.abs(arr[i]) + Math.abs(arr[i - 1])) / 2 * (grid[i] - grid[i - 1]); return s; }
     var contribution = rates.map(function (r, ri) {
       var v = r / 1000, cap = grid.map(function (_, gg) { return k1[gg] * v; });
       var pct = trapzAbs(cap) / trapzAbs(imat[ri]) * 100;
       return { rate: r, pct: pct };
     });
-    // b-value (log Ipeak vs log v) — 피크 전류 기반(안정적)
     var ipeak = rates.map(function (r) { var I = byRate[r].I, mx = -Infinity, mn = Infinity, p; for (p = 0; p < I.length; p++) { if (I[p] > mx) mx = I[p]; if (I[p] < mn) mn = I[p]; } return _k1k2.branch === 'cathodic' ? Math.abs(mn) : mx; });
     var bVal = null;
     if (rates.length >= 2) {
@@ -714,20 +700,18 @@
       var num = 0, den = 0; for (i2 = 0; i2 < n; i2++) { num += (lx[i2] - mx2) * (ly[i2] - my); den += (lx[i2] - mx2) * (lx[i2] - mx2); }
       bVal = den ? num / den : null;
     }
-    var dispRate = rates[rates.length - 1];  // 그래프 표시용: 가장 빠른 rate
+    var dispRate = rates[rates.length - 1];
     var dispV = dispRate / 1000;
-    var capCurve = grid.map(function (_, gg) { return k1[gg] * dispV * 1000; });   // mA
-    var totCurve = imat[rates.length - 1].map(function (x) { return x * 1000; });   // mA
+    var capCurve = grid.map(function (_, gg) { return k1[gg] * dispV * 1000; });
+    var totCurve = imat[rates.length - 1].map(function (x) { return x * 1000; });
     return {
       rates: rates, allRates: Object.keys(byRate).map(parseFloat).sort(function (a, b) { return a - b; }),
       grid: grid, contribution: contribution, bVal: bVal,
       dispRate: dispRate, capCurve: capCurve, totCurve: totCurve
     };
   }
-  // [신규] 사용자가 설정한 전압 구간마다 b-value 산출.
-  //   각 구간에서 scan rate별 피크전류 ip 를 뽑아 log(ip) = b·log(v) + const 회귀 → 기울기 b.
-  //   b≈0.5 확산지배, b≈1.0 표면/용량성. 구간 type(산화/환원/둘 다)에 따라 해당 피크만 계산.
-  //   스캔레이트 제외(_k1k2.excluded)는 k1/k2와 동일하게 반영.
+
+  // 사용자가 설정한 전압 구간마다 b-value 산출.
   function computeBValues(f) {
     if (!f || !f.rateData) return null;
     var rd = f.rateData[f.selNum]; if (!rd) return null;
@@ -735,7 +719,6 @@
     function byRateOf(arr) { var m = {}; (arr || []).forEach(function (s) { if (!m[s.rate]) m[s.rate] = s; }); return m; }
     var A = byRateOf(rd.anodic), Cx = byRateOf(rd.cathodic);
     function ratesOf(m) { return Object.keys(m).map(parseFloat).filter(function (r) { return !_k1k2.excluded[r]; }).sort(function (a, b) { return a - b; }); }
-    // 구간 [lo,hi] 안의 피크전류(rate별). wantMax=true → 산화(+I 최대), false → 환원(-I 최소)
     function peakInWin(sg, lo, hi, wantMax) {
       var best = null, p;
       for (p = 0; p < sg.V.length; p++) {
@@ -745,7 +728,6 @@
       }
       return best;
     }
-    // log(ip) vs log(v) 선형 회귀 → { b, r2, n, points:[{v,ip}] }
     function fitB(m, lo, hi, wantMax) {
       var rs = ratesOf(m), xs = [], ys = [], pts = [];
       rs.forEach(function (r) { var ip = peakInWin(m[r], lo, hi, wantMax); if (ip !== null && ip !== 0) { xs.push(Math.log(r)); ys.push(Math.log(Math.abs(ip))); pts.push({ v: r, ip: ip }); } });
@@ -765,15 +747,14 @@
       };
     });
   }
+
   function currentK1K2File() {
     var i;
     if (_k1k2.fileId) { for (i = 0; i < cvFiles.length; i++) if (cvFiles[i].id === _k1k2.fileId) return cvFiles[i]; }
-    // 기본: rateData 가 있는 첫 파일
     for (i = 0; i < cvFiles.length; i++) if (cvFiles[i].rateData) return cvFiles[i];
     return cvFiles[0] || null;
   }
 
-  // 파일/사이클/스윕이 바뀔 때 1회: formation 등 이상치(가장 느린 rate가 다음의 0.5배 미만)를 기본 제외
   function autoInitExclude(f) {
     var key = f.id + '|' + f.selNum + '|' + _k1k2.branch;
     if (_k1k2.initKey === key) return;
@@ -789,11 +770,9 @@
     var host = $('cvK1K2'); if (!host) return;
     var f = currentK1K2File();
     if (f) autoInitExclude(f);
-    // 컨트롤 영역
     var ctrl = $('cvK1K2Controls');
     if (ctrl) {
       var html = '';
-      // 파일 선택
       html += '<label style="font-size:11px;color:var(--text-muted);">파일</label> ';
       html += '<select id="k1k2File" class="select-field" style="margin-bottom:0;height:30px;min-width:180px;">';
       cvFiles.forEach(function (cf) { html += '<option value="' + cf.id + '"' + (f && cf.id === f.id ? ' selected' : '') + '>' + cf.name + '</option>'; });
@@ -816,7 +795,6 @@
     var out = computeK1K2(f);
     if (!out) { if (res) res.innerHTML = '<span style="color:#6b7280;font-size:12px;">스캔레이트 구간을 찾지 못했습니다.</span>'; drawK1K2(null); return; }
 
-    // 검출된 rate 체크박스 (제외/포함)
     var chips = '<div style="margin:2px 0 8px;font-size:11px;color:var(--text-muted);">검출된 스캔레이트(체크 해제 시 fitting 제외):</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">';
     (out.allRates || out.rates).forEach(function (r) {
       var on = !_k1k2.excluded[r];
@@ -829,7 +807,6 @@
       bindRateChecks(); drawK1K2(null); return;
     }
 
-    // 결과 표
     var warn = '';
     var over = out.contribution.some(function (x) { return x.pct > 100 || x.pct < 0; });
     if (over || (out.bVal != null && out.bVal > 1.1)) {
@@ -839,7 +816,6 @@
       return '<tr><td style="padding:3px 6px;">' + x.rate + ' mV/s</td><td style="padding:3px 6px;">' + x.pct.toFixed(1) + ' %</td><td style="padding:3px 6px;color:#9ca3af;">' + (100 - x.pct).toFixed(1) + ' %</td></tr>';
     }).join('');
 
-    // 구간별 b-value (피크 검출 전압 구간을 설정했을 때). 없으면 전체 피크 b 한 줄만.
     var bWins = computeBValues(f);
     var bHtml;
     if (bWins && bWins.length) {
@@ -887,10 +863,6 @@
 
   // ==========================================================================
   // 데이터 라이브러리 연동
-  //  - CV 파일을 사이드바 '데이터 라이브러리'에 등록한다(GITT와 동일한 방식).
-  //  - experimentType:'cv' 라서 일반 분석(rate/cycle)으로 전환되지 않고, 클릭하면
-  //    09-dataset-library.js 의 가드가 CVAnalyzer.showDataset(id) 를 호출해 CV 탭을 연다.
-  //  - cvPayload 에 사이클 데이터를 저장해 새로고침(IndexedDB 복원) 후에도 다시 볼 수 있다.
   // ==========================================================================
   function registerCvDataset(f) {
     if (typeof datasetLibrary === 'undefined' || typeof normalizeDataset !== 'function') return;
@@ -902,13 +874,13 @@
         if (datasetLibrary[i].experimentType === 'cv' && datasetLibrary[i].filename === f.name) { existing = datasetLibrary[i]; break; }
       }
       if (existing) {
-        f.id = existing.id;                        // 같은 파일 재업로드: CV 파일 id 를 기존 항목 id 로 맞춤
-        if (existing.lineColor) f.color = existing.lineColor;   // 그래프 색을 라이브러리 색으로 통일
+        f.id = existing.id;
+        if (existing.lineColor) f.color = existing.lineColor;
         existing.keyMetric = metric;
         existing.lastConvertedAt = now;
         existing.conversionStatus = 'converted';
-        existing.compareEnabled = true;            // 업로드 직후 그래프에 보이도록 체크 상태로
-        existing.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color, rateData: f.rateData || null };
+        existing.compareEnabled = true;
+        existing.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color, rateData: f.rateData || null, massMg: f.massMg != null ? f.massMg : null };
         if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(existing)).catch(function (e) { console.warn('CV DB 갱신 실패:', e); }); } catch (e) {} }
       } else {
         var base = f.name ? f.name.replace(/\.[^.]+$/, '') : 'CV';
@@ -916,16 +888,16 @@
           id: f.id,
           projectName: (typeof activeProjectId !== 'undefined' && activeProjectId) ? activeProjectId : 'Default Project',
           experimentType: 'cv',
-          isCv: true,                       // 01-core 초기 자동 활성화에서 제외하기 위한 플래그
+          isCv: true,
           dataName: base, customName: base, sampleName: '',
           filename: f.name, uploadedAt: now, lastConvertedAt: now,
           conversionStatus: 'converted', keyMetric: metric,
           processedCycles: {}, totalCycles: 0, ice: '-',
-          compareEnabled: true                     // 업로드 직후 그래프에 보이도록 체크 상태로
+          compareEnabled: true
         };
-        normalizeDataset(ds);                      // ds.lineColor(라이브러리 색) 계산
-        if (ds.lineColor) f.color = ds.lineColor;  // 그래프 색을 라이브러리 색으로 통일
-        ds.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color, rateData: f.rateData || null };
+        normalizeDataset(ds);
+        if (ds.lineColor) f.color = ds.lineColor;
+        ds.cvPayload = { cycles: f.cycles, selNum: f.selNum, color: f.color, rateData: f.rateData || null, massMg: f.massMg != null ? f.massMg : null };
         datasetLibrary.push(ds);
         if (typeof saveDatasetToDB === 'function') { try { Promise.resolve(saveDatasetToDB(ds)).catch(function (e) { console.warn('CV DB 저장 실패:', e); }); } catch (e) {} }
       }
@@ -934,7 +906,6 @@
     } catch (e) { console.warn('CV 라이브러리 등록 실패:', e); }
   }
 
-  // 라이브러리에서 CV 항목 클릭 시(09번) 호출. 필요하면 저장된 데이터로 복원하고, 체크(표시) 상태로 만든 뒤 CV 탭을 연다.
   function showDataset(id) {
     var present = null, i, dsRef = null;
     for (i = 0; i < cvFiles.length; i++) { if (cvFiles[i].id === id) { present = cvFiles[i]; break; } }
@@ -942,12 +913,11 @@
       for (i = 0; i < datasetLibrary.length; i++) { if (datasetLibrary[i].id === id) { dsRef = datasetLibrary[i]; break; } }
     }
     if (!present && dsRef && dsRef.cvPayload && dsRef.cvPayload.cycles && dsRef.cvPayload.cycles.length) {
-      var color = dsRef.lineColor || dsRef.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];  // 라이브러리 색 우선
+      var color = dsRef.lineColor || dsRef.cvPayload.color || CV_COLORS[cvFiles.length % CV_COLORS.length];
       var selNum = (dsRef.cvPayload.selNum != null) ? dsRef.cvPayload.selNum : dsRef.cvPayload.cycles[0].num;
-      cvFiles.push({ id: id, name: dsRef.filename || dsRef.dataName, color: color, cycles: dsRef.cvPayload.cycles, selNum: selNum, rateData: dsRef.cvPayload.rateData || null });
+      cvFiles.push({ id: id, name: dsRef.filename || dsRef.dataName, color: color, cycles: dsRef.cvPayload.cycles, selNum: selNum, rateData: dsRef.cvPayload.rateData || null, massMg: (dsRef.cvPayload.massMg != null ? dsRef.cvPayload.massMg : null) });
       refreshFileList();
     }
-    // 클릭 = 보기 → 체크(표시) 상태로 만든다
     if (dsRef && dsRef.compareEnabled === false) {
       dsRef.compareEnabled = true;
       if (typeof updateDatasetInDB === 'function') { try { Promise.resolve(updateDatasetInDB(dsRef)).catch(function () {}); } catch (e) {} }
@@ -957,20 +927,18 @@
     activateCVTab();
   }
 
-  // 라이브러리에서 CV 항목 삭제 시(09번) 호출. 그래프에서도 제거.
   function removeDatasetFromChart(id) {
     var before = cvFiles.length;
     cvFiles = cvFiles.filter(function (f) { return f.id !== id; });
     if (cvFiles.length !== before) { refreshFileList(); renderAll(); }
   }
 
-  // 외부(09-dataset-library.js)에서 호출할 공개 API
-  //  - refresh: 체크박스(compareEnabled) 변경 시 CV 그래프/피크표를 다시 그림
   window.CVAnalyzer = { activateTab: activateCVTab, showDataset: showDataset, removeDataset: removeDatasetFromChart, refresh: renderAll };
 
   document.addEventListener('DOMContentLoaded', function () {
     var btn = $('btnTabCV'); if (btn) btn.addEventListener('click', activateCVTab);
     var addWin = $('cvAddWindow'); if (addWin) addWin.addEventListener('click', addWindow);
+    var usel = $('cvUnitSel'); if (usel) usel.addEventListener('change', function () { cvUnit = this.value; renderAll(); });
     renderWindowList();
     var fileInput = $('cvFileInput');
     if (fileInput) fileInput.addEventListener('change', function (e) { if (e.target.files && e.target.files.length) addFiles(e.target.files); e.target.value = ''; });

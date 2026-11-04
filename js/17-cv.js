@@ -1653,9 +1653,9 @@
       return (
         '<tr><td style="padding:3px 6px;">' + x.rate + ' mV/s</td>' +
         '<td style="padding:3px 6px;">' +
-        (x.needsReview ? '검토 필요' : format(x.pct) + '%') +
+        (format(x.pct) + '%' + (x.needsReview ? ' (검토필요)' : '')) +
         '</td><td style="padding:3px 6px;">' +
-        (x.needsReview ? '검토 필요' : format(x.diffPct) + '%') +
+        (format(x.diffPct) + '%' + (x.needsReview ? ' (검토필요)' : '')) +
         '</td><td style="padding:3px 6px;">' + format(x.oppositePct) + '%' +
         '</td><td style="padding:3px 6px;">' + format(x.errorPct) + '%' +
         '</td></tr>'

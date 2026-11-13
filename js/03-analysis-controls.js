@@ -93,7 +93,15 @@ function initAnalysisControls() {
     }
 
     if (dqdvQo) {
-        dqdvQo.addEventListener('input', () => {
+        dqdvQo.addEventListener('input', async () => {
+            const val = parseFloat(dqdvQo.value);
+            if (!isNaN(val) && val > 0 && activeDatasetId) {
+                const ds = datasetLibrary.find(d => d.id === activeDatasetId);
+                if (ds) {
+                    ds.qo = val;
+                    await updateDatasetInDB(ds);
+                }
+            }
             if (hasActiveDataset()) {
                 updateDqDvView();
             }

@@ -109,11 +109,7 @@
             if (!c) return;
             const dis = (typeof c.totalDischargeCap === "number" && c.totalDischargeCap > 0) ? c.totalDischargeCap : null;
             const cha = (typeof c.totalChargeCap === "number" && c.totalChargeCap > 0) ? c.totalChargeCap : null;
-            // 가역 용량 = 사이클의 두 번째 단계 용량.
-            //   방전 먼저(음극): 충전 용량 / 충전 먼저(양극·풀셀, chargeFirst): 방전 용량
-            const y = (c.chargeFirst === true)
-                ? ((dis != null) ? dis : cha)
-                : ((cha != null) ? cha : dis);
+            const y = (cha != null) ? cha : dis;
             if (y == null) return;
             const ce = (cha != null && dis != null) ? calcCoulombicEfficiency(c) : null;
             pts.push({ x: cn, y: y, ce: ce, i: medianAbsCurrent(c) });

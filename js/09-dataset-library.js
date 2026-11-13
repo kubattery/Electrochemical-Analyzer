@@ -148,9 +148,9 @@ async function finalizeMultiDatasetSave(useFilenames) {
         const savedCycles = item.processedCycles;
         const totalCycles = Object.keys(savedCycles).length;
         const firstCyc = savedCycles[1];
-        const ice = firstCyc && firstCyc.totalDischargeCap > 0
-            ? ((firstCyc.totalChargeCap / firstCyc.totalDischargeCap) * 100).toFixed(1)
-            : '-';
+        // 셀 종류(충전 먼저/방전 먼저)에 맞는 식으로 ICE 계산 (10-data-processing.js)
+        const iceValue = calcCoulombicEfficiency(firstCyc);
+        const ice = iceValue !== null ? iceValue.toFixed(1) : '-';
 
         const dataset = {
             id,
@@ -169,8 +169,7 @@ async function finalizeMultiDatasetSave(useFilenames) {
             ice,
             compareEnabled: true,
             selectedCycle: 1,
-            mass: dqdvMass ? parseFloat(dqdvMass.value) || 2.58 : 2.58,
-            qo: dqdvQo ? parseFloat(dqdvQo.value) || 1000 : 1000
+            mass: dqdvMass ? parseFloat(dqdvMass.value) || 2.58 : 2.58
         };
 
         normalizeDataset(dataset);
@@ -304,9 +303,7 @@ function switchActiveDataset(id) {
     if (dqdvMass && ds.mass !== undefined) {
         dqdvMass.value = ds.mass;
     }
-    if (dqdvQo && ds.qo !== undefined) {
-        dqdvQo.value = ds.qo;
-    }
+
     if (cycleNumbers.length > 0) {
         selectedDqDvCycles = [cycleNumbers[0]];
     }

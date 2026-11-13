@@ -35,10 +35,7 @@ function initExportFeatures() {
         
         // 데이터 배열 생성
         const data = [
-            // 용량 열 제목은 현재 선택된 율속 기준(충전/방전)을 따른다
-            ["C-rate", "Cycle Range",
-                currentRateMode === 'charge' ? "Avg Charge Capacity (mAh/g)" : "Avg Discharge Capacity (mAh/g)",
-                "Retention (%)", "Avg Coulombic Efficiency (%)"]
+            ["C-rate", "Cycle Range", "Avg Charge Capacity (mAh/g)", "Retention (%)", "Avg Coulombic Efficiency (%)"]
         ];
         
         rateCapabilitySummary.forEach(row => {

@@ -11,6 +11,91 @@
    ========================================== */
 
 /**
+ * 구간의 전압 추세로 충전/방전 방향을 판정합니다.
+ * 앞쪽 1/3 평균 전압보다 뒤쪽 1/3 평균 전압이 높으면 충전(+1), 낮으면 방전(-1),
+ * 판정할 수 없으면(포인트 부족·전압 변화 없음) 0 을 반환합니다.
+ * 음극(방전 먼저)·양극(충전 먼저) 어느 쪽 데이터든 같은 규칙으로 판정됩니다.
+ */
+function detectSegmentDirection(points) {
+    const n = points.length;
+    if (n < 2) return 0;
+
+    const span = Math.max(1, Math.floor(n / 3));
+    let headSum = 0;
+    let tailSum = 0;
+    for (let k = 0; k < span; k++) {
+        headSum += points[k].voltage;
+        tailSum += points[n - 1 - k].voltage;
+    }
+
+    if (tailSum > headSum) return 1;
+    if (tailSum < headSum) return -1;
+    return 0;
+}
+
+/**
+ * 전류 부호가 일반 규칙(충전 +, 방전 -)과 반대로 기록된 파일인지 판별합니다.
+ * 사이클마다 +전류/-전류 가닥의 전압 추세를 확인해, 부호와 어긋나는 가닥이 더 많으면 true.
+ */
+function isCurrentSignInverted(cycles) {
+    const MIN_STRAND_POINTS = 5;
+    let agree = 0;
+    let disagree = 0;
+
+    Object.values(cycles).forEach(cycleData => {
+        [1, -1].forEach(sign => {
+            const strand = cycleData.all.filter(p => (sign > 0 ? p.current > 0 : p.current < 0));
+            if (strand.length < MIN_STRAND_POINTS) return;
+            const dir = detectSegmentDirection(strand);
+            if (dir === 0) return;
+            if (dir === sign) agree++;
+            else disagree++;
+        });
+    });
+
+    return disagree > agree;
+}
+
+/**
+ * 사이클이 충전부터 시작하는지(양극 반쪽전지·풀셀) 방전부터 시작하는지(음극 반쪽전지)를
+ * 사이클별 다수결로 판별합니다. 판별 근거가 없으면 null 을 반환합니다.
+ * chargeSign: 충전에 해당하는 전류 부호(+1 또는 -1)
+ */
+function detectChargeFirst(cycles, chargeSign) {
+    let chargeFirstVotes = 0;
+    let dischargeFirstVotes = 0;
+
+    Object.values(cycles).forEach(cycleData => {
+        const points = cycleData.all;
+        const firstCharge = points.findIndex(p => p.current * chargeSign > 0);
+        const firstDischarge = points.findIndex(p => p.current * chargeSign < 0);
+        if (firstCharge === -1 || firstDischarge === -1) return;
+        if (firstCharge < firstDischarge) chargeFirstVotes++;
+        else dischargeFirstVotes++;
+    });
+
+    if (chargeFirstVotes === 0 && dischargeFirstVotes === 0) return null;
+    return chargeFirstVotes > dischargeFirstVotes;
+}
+
+/**
+ * 쿨롱 효율(%)을 셀 종류에 맞춰 계산합니다. 계산할 수 없으면 null.
+ *  - 방전 먼저(음극 반쪽전지): 충전 용량 / 방전 용량
+ *  - 충전 먼저(양극 반쪽전지·풀셀, chargeFirst === true): 방전 용량 / 충전 용량
+ * chargeFirst 정보가 없는 기존 저장 데이터는 종전과 같이 음극 기준으로 계산합니다.
+ */
+function calcCoulombicEfficiency(cycleData) {
+    if (!cycleData) return null;
+    const charge = cycleData.totalChargeCap;
+    const discharge = cycleData.totalDischargeCap;
+    if (typeof charge !== 'number' || typeof discharge !== 'number') return null;
+
+    const numerator = cycleData.chargeFirst === true ? discharge : charge;
+    const denominator = cycleData.chargeFirst === true ? charge : discharge;
+    return denominator > 0 ? (numerator / denominator) * 100 : null;
+}
+
+/**
  * 엑셀 또는 텍스트 파일에서 파싱된 행 데이터를 정규화하고,
  * 사이클 컬럼이 없거나 불명확한 경우 Rest 구간을 자동 감지하여 스킵하고 사이클을 쪼갭니다.
  */
@@ -110,13 +195,27 @@ function normalizeAndSplitCycles(dataRows, isAhUnit) {
 
     console.log(`자동 분리된 유효 충방전 세그먼트 개수: ${segments.length}`);
 
+    // 구간 방향은 순서(첫 구간 = 방전)로 가정하지 않고 전압 추세로 판정한다.
+    // → 충전부터 시작하는 양극 데이터도 충전/방전이 뒤바뀌지 않는다.
     let cycleCounter = 0;
+    let firstDir = 0;
+    let prevDir = 0;
     segments.forEach((seg, idx) => {
-        const isSodiation = (idx % 2 === 0);
-        if (isSodiation) {
+        let dir = detectSegmentDirection(seg);
+        if (dir === 0) {
+            // 전압 추세로 판정 불가: 직전 구간의 반대 방향, 첫 구간이면 종전 규칙(방전)으로 처리
+            dir = prevDir !== 0 ? -prevDir : -1;
+            console.warn(`세그먼트 ${idx + 1}: 전압 추세로 방향을 판정할 수 없어 ${dir > 0 ? '충전' : '방전'}으로 간주합니다.`);
+        }
+        if (firstDir === 0) firstDir = dir;
+
+        // 첫 구간과 같은 방향이 다시 나오거나, 같은 방향이 연달아 나오면 새 사이클
+        if (dir === firstDir || dir === prevDir) {
             cycleCounter++;
         }
-        const virtualCurrent = isSodiation ? -1.0 : 1.0;
+        prevDir = dir;
+
+        const virtualCurrent = dir > 0 ? 1.0 : -1.0;
         seg.forEach(row => {
             rawData.push([
                 cycleCounter,
@@ -407,6 +506,8 @@ function parseRawText(text, filename, encoding = 'UTF-8') {
 
 /**
  * 원시 데이터를 사이클별로 정리하고 충전(Desodiation)/방전(Sodiation)으로 분리합니다.
+ * 변수명은 음극 기준(sodiation = 방전, desodiation = 충전)이지만,
+ * 양극 데이터에서도 방전 가닥은 sodiation, 충전 가닥은 desodiation 에 담깁니다.
  */
 function processData() {
     processedCycles = {};
@@ -435,12 +536,25 @@ function processData() {
         processedCycles[cycleNum].all.push({ voltage, capacity, current });
     });
 
+    // 전류 부호가 반대로 기록된 파일이면 부호를 뒤집어 해석 (전압 추세로 검증)
+    const chargeSign = isCurrentSignInverted(processedCycles) ? -1 : 1;
+    if (chargeSign < 0) {
+        console.log("전류 부호가 전압 추세와 반대로 기록되어 있어, 부호를 뒤집어 충전/방전을 분류합니다.");
+    }
+
+    // 충전 먼저(양극·풀셀) / 방전 먼저(음극) 자동 판별 → 쿨롱 효율 계산 기준으로 사용
+    const chargeFirst = detectChargeFirst(processedCycles, chargeSign);
+    if (chargeFirst !== null) {
+        console.log(`셀 종류 자동 판별: ${chargeFirst ? '충전 먼저(양극 반쪽전지·풀셀)' : '방전 먼저(음극 반쪽전지)'}`);
+        Object.values(processedCycles).forEach(cycleData => { cycleData.chargeFirst = chargeFirst; });
+    }
+
     for (const [cycleNum, cycleData] of Object.entries(processedCycles)) {
         const points = cycleData.all;
         if (points.length < 2) continue;
 
-        const rawSod = points.filter(p => p.current < 0);
-        const rawDesod = points.filter(p => p.current > 0);
+        const rawSod = points.filter(p => p.current * chargeSign < 0);
+        const rawDesod = points.filter(p => p.current * chargeSign > 0);
 
         if (rawSod.length > 0) {
             const sodStartCap = rawSod[0].capacity;

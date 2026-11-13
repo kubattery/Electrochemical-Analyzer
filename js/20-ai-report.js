@@ -139,7 +139,7 @@ function aiComputeInitial(pc) {
 
     const initDischarge = first.totalDischargeCap || 0;
     const initCharge = first.totalChargeCap || 0;
-    const ice = initDischarge > 0 ? (initCharge / initDischarge) * 100 : null;
+    const ice = calcCoulombicEfficiency(first);   // 셀 종류(충전 먼저/방전 먼저)에 맞는 식
 
     return {
         initialDischargeCapacity_mAh_g: aiNum(initDischarge),
@@ -254,8 +254,9 @@ function aiRateSteps(pc) {
             const capVal = currentRateMode === 'charge' ? cyc.totalChargeCap : cyc.totalDischargeCap;
             if (!(capVal > 0)) return;
             valid++;
-            if (cyc.totalDischargeCap > 0 && typeof cyc.totalChargeCap === 'number') {
-                ceSum += (cyc.totalChargeCap / cyc.totalDischargeCap) * 100;
+            const ceValue = calcCoulombicEfficiency(cyc);
+            if (ceValue !== null) {
+                ceSum += ceValue;
                 ceCount++;
             }
         });
@@ -361,7 +362,7 @@ function aiCycleMetricsSeries(pc, maxPoints) {
             dischargeCapacity_mAh_g: dCap,
             chargeCapacity_mAh_g: cCap,
             coulombicEfficiency_percent:
-                (dCap > 0 && cCap != null) ? aiNum((cCap / dCap) * 100) : null,
+                aiNum(calcCoulombicEfficiency(c)),
             avgDischargeVoltage_V: dis ? dis.avgVoltage_V : null,
             avgChargeVoltage_V: chg ? chg.avgVoltage_V : null,
             polarization_V: (dis && chg) ? aiNum(chg.avgVoltage_V - dis.avgVoltage_V, 4) : null,
@@ -414,8 +415,9 @@ function aiCycleMetricsSeries(pc, maxPoints) {
     return {
         note: '평균 전압은 용량 가중 평균(∫V dQ / ∫dQ)이다. 분극 = 평균 충전 전압 − 평균 방전 전압. ' +
               '에너지는 방전 곡선의 ∫V dQ (mAh/g·V = Wh/kg). 아래 rows 는 columns 순서를 따르는 값 배열이다.',
-        efficiencyConvention: 'coulombicEfficiency_percent = 충전용량 / 방전용량 × 100 (음극 기준 정의). ' +
-              '양극 반쪽전지처럼 충전부터 시작하는 셀에서는 방전/충전으로 다시 계산해야 하므로 원시 용량을 함께 실었다.',
+        efficiencyConvention: 'coulombicEfficiency_percent 는 셀 종류를 자동 판별해 계산한 값이다. ' +
+              '방전부터 시작하는 셀(음극 반쪽전지)은 충전용량 / 방전용량 × 100, ' +
+              '충전부터 시작하는 셀(양극 반쪽전지·풀셀)은 방전용량 / 충전용량 × 100. 원시 용량도 함께 실었다.',
         summary: summary,
         columns: columns,
         rows: series.map(r => columns.map(k => r[k]))

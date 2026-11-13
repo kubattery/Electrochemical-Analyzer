@@ -169,7 +169,8 @@ async function finalizeMultiDatasetSave(useFilenames) {
             ice,
             compareEnabled: true,
             selectedCycle: 1,
-            mass: dqdvMass ? parseFloat(dqdvMass.value) || 2.58 : 2.58
+            mass: dqdvMass ? parseFloat(dqdvMass.value) || 2.58 : 2.58,
+            qo: dqdvQo ? parseFloat(dqdvQo.value) || 1000 : 1000
         };
 
         normalizeDataset(dataset);
@@ -303,7 +304,9 @@ function switchActiveDataset(id) {
     if (dqdvMass && ds.mass !== undefined) {
         dqdvMass.value = ds.mass;
     }
-
+    if (dqdvQo && ds.qo !== undefined) {
+        dqdvQo.value = ds.qo;
+    }
     if (cycleNumbers.length > 0) {
         selectedDqDvCycles = [cycleNumbers[0]];
     }

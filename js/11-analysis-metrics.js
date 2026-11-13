@@ -79,7 +79,9 @@ function updateOverviewMetricsTable() {
 
         const initDischarge = firstCycle.totalDischargeCap || 0;
         const initCharge = firstCycle.totalChargeCap || 0;
-        const ice = initDischarge > 0 ? (initCharge / initDischarge) * 100 : 0;
+        // 셀 종류(충전 먼저/방전 먼저)에 맞는 식으로 ICE 계산 (10-data-processing.js)
+        const iceValue = calcCoulombicEfficiency(firstCycle);
+        const ice = iceValue !== null ? iceValue : 0;
 
         let iceColor = "";
         if (ice >= 85) {
@@ -250,9 +252,8 @@ function calculateRateCapability() {
                     : (cyc ? cyc.totalDischargeCap : 0);
                 if (cyc && capVal > 0) {
                     sumCap += capVal;
-                    const ce = (cyc.totalDischargeCap > 0)
-                        ? (cyc.totalChargeCap / cyc.totalDischargeCap) * 100
-                        : 0;
+                    const ceValue = calcCoulombicEfficiency(cyc);
+                    const ce = ceValue !== null ? ceValue : 0;
                     sumCE += ce;
                     validCount++;
                 }

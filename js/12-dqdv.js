@@ -130,10 +130,11 @@ function renderDqDvChart(opts = {}) {
             if (tbody) {
                 tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">로드된 데이터가 없습니다.</td></tr>`;
             }
+            renderDqDvNormList([]);
         }
         return;
     }
-
+    
     // WonATech 상용 기준 파라미터 획득
     const stepVVal = dqdvStepV ? parseFloat(dqdvStepV.value) : 0.010;
     const qoVal = dqdvQo ? parseFloat(dqdvQo.value) || 1000 : 1000;
@@ -190,8 +191,9 @@ function renderDqDvChart(opts = {}) {
             };
 
             // 개별 데이터셋의 질량(Mass) 값 적용
-            const dsMass = ds.mass !== undefined ? ds.mass : 2.58;
-            const scaleFactor = (dsMass / 1000.0) / qoVal;
+            const dsMass = (ds.mass !== undefined && ds.mass > 0) ? ds.mass : 2.58;
+            const dsQo = (ds.qo !== undefined && ds.qo > 0) ? ds.qo : 1000;
+            const scaleFactor = (dsMass / 1000.0) / dsQo;
 
             let cBorderColor, dBorderColor;
             let cDash = undefined;
@@ -323,6 +325,7 @@ function renderDqDvChart(opts = {}) {
     // 테이블 정보 업데이트 (다중 사이클 선택을 적용하므로 targetCycleNum 매개변수는 무시됨, 캐시 데이터 전달)
     if (!opts.skipTable) {
         updateDqDvTable(displayDS, null, stepVVal, qoVal, postAvgVal, computedDqDvCache);
+        renderDqDvNormList(displayDS);
     }
 }
 
@@ -346,8 +349,9 @@ function updateDqDvTable(displayDS, targetCycleNum, stepVVal, qoVal, postAvgVal,
             if (!cycleData) return;
 
             // 개별 데이터셋의 질량(Mass) 값 적용 (없을 시 폴백 2.58)
-            const dsMass = ds.mass !== undefined ? ds.mass : 2.58;
-            const scaleFactor = (dsMass / 1000.0) / qoVal;
+            const dsMass = (ds.mass !== undefined && ds.mass > 0) ? ds.mass : 2.58;
+            const dsQo = (ds.qo !== undefined && ds.qo > 0) ? ds.qo : 1000;
+            const scaleFactor = (dsMass / 1000.0) / dsQo;
             
             let chargeDqDv = [];
             let dischargeDqDv = [];
@@ -417,6 +421,68 @@ function updateDqDvTable(displayDS, targetCycleNum, stepVVal, qoVal, postAvgVal,
 /**
  * dQ/dV 분석 탭 내 다중 사이클 선택 칩 목록을 렌더링하고 이벤트를 바인딩합니다.
  */
+/**
+ * 데이터셋별 Qo·Mass 정규화 입력 목록 렌더링.
+ * 여러 파일을 겹쳐 비교할 때 각 데이터셋의 Qo(기준용량)·Mass(질량)를 개별 보정한다.
+ * 값은 각 데이터셋 객체(ds.qo / ds.mass)에 저장되며 차트·표의 scaleFactor 에 그대로 반영된다.
+ */
+function renderDqDvNormList(displayDS) {
+    const host = document.getElementById('dqdvNormList');
+    if (!host) return;
+
+    if (!displayDS || displayDS.length === 0) {
+        host.innerHTML = '<span style="font-size:11px; color:var(--text-muted);">표시할 데이터셋이 없습니다.</span>';
+        return;
+    }
+
+    let html = '<div style="display:flex; flex-direction:column; gap:6px;">';
+    displayDS.forEach(ds => {
+        if (!ds || !ds.processedCycles) return;
+        const dsQo = (ds.qo !== undefined && ds.qo > 0) ? ds.qo : 1000;
+        const dsMass = (ds.mass !== undefined && ds.mass > 0) ? ds.mass : 2.58;
+        html +=
+            '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">' +
+                '<span style="display:inline-flex; align-items:center; gap:6px; min-width:160px;">' +
+                    '<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:' + ds.lineColor + '; box-shadow:0 0 6px ' + ds.lineColor + ';"></span>' +
+                    '<strong style="color:#fff; font-size:12px;">' + escapeHtml(ds.customName) + '</strong>' +
+                '</span>' +
+                '<label style="font-size:11px; color:var(--text-muted);">Qo [mAh]' +
+                    '<input type="number" class="select-field" data-dqdv-qo="' + ds.id + '" value="' + dsQo + '" min="0.0001" step="1" style="width:90px; height:30px; margin:0 0 0 6px; padding:4px;">' +
+                '</label>' +
+                '<label style="font-size:11px; color:var(--text-muted);">Mass [mg]' +
+                    '<input type="number" class="select-field" data-dqdv-mass="' + ds.id + '" value="' + dsMass + '" min="0.0001" step="0.01" style="width:90px; height:30px; margin:0 0 0 6px; padding:4px;">' +
+                '</label>' +
+            '</div>';
+    });
+    html += '</div>';
+    host.innerHTML = html;
+
+    host.querySelectorAll('input[data-dqdv-qo]').forEach(inp => {
+        inp.addEventListener('change', async function () {
+            const ds = datasetLibrary.find(d => d.id === this.getAttribute('data-dqdv-qo'));
+            const v = parseFloat(this.value);
+            if (ds && !isNaN(v) && v > 0) {
+                ds.qo = v;
+                if (ds.id === activeDatasetId && dqdvQo) dqdvQo.value = v; // 헤더 입력칸 동기화
+                if (typeof updateDatasetInDB === 'function') { try { await updateDatasetInDB(ds); } catch (e) {} }
+                updateDqDvView();
+            }
+        });
+    });
+    host.querySelectorAll('input[data-dqdv-mass]').forEach(inp => {
+        inp.addEventListener('change', async function () {
+            const ds = datasetLibrary.find(d => d.id === this.getAttribute('data-dqdv-mass'));
+            const v = parseFloat(this.value);
+            if (ds && !isNaN(v) && v > 0) {
+                ds.mass = v;
+                if (ds.id === activeDatasetId && dqdvMass) dqdvMass.value = v; // 헤더 입력칸 동기화
+                if (typeof updateDatasetInDB === 'function') { try { await updateDatasetInDB(ds); } catch (e) {} }
+                updateDqDvView();
+            }
+        });
+    });
+}
+
 function renderCycleChipsUI() {
     const container = document.getElementById('cycleChipsContainer');
     if (!container) return;

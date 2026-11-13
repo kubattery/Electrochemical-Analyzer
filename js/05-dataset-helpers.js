@@ -50,7 +50,12 @@ function normalizeDataset(ds) {
     ds.conversionStatus = ds.conversionStatus || "converted";
     ds.keyMetric = ds.keyMetric || (ds.ice && ds.ice !== "-" ? `ICE: ${ds.ice}%` : `Cycles: ${ds.totalCycles}`);
     ds.lastConvertedAt = ds.lastConvertedAt || ds.uploadedAt || new Date().toLocaleTimeString('ko-KR');
-    
+
+    // 충전/방전 라벨이 뒤바뀐 채 저장된 데이터셋 보정 (10-data-processing.js)
+    if (ds.processedCycles && typeof repairCycleDirections === 'function') {
+        repairCycleDirections(ds.processedCycles);
+    }
+
     // 색상 이원화 적용
     ds.groupColor = getSampleGroupColor(ds.sampleName);
     ds.lineColor = getDatasetLineColor(ds.id || ds.dataName);

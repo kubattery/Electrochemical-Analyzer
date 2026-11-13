@@ -96,6 +96,56 @@ function calcCoulombicEfficiency(cycleData) {
 }
 
 /**
+ * 이미 저장된 데이터셋의 충전/방전 라벨을 바로잡습니다. (05-dataset-helpers.js 의 normalizeDataset 에서 호출)
+ *  1) "방전" 가닥의 전압이 올라가고 "충전" 가닥의 전압이 내려가는 사이클이 더 많으면
+ *     라벨이 뒤바뀐 채 저장된 데이터이므로 두 가닥과 용량 값을 서로 맞바꾼다.
+ *  2) chargeFirst(충전 먼저/방전 먼저) 정보가 없는 예전 데이터는 용량 크기로 추정한다.
+ *     쿨롱 효율은 보통 100% 이하이므로, 용량이 더 큰 쪽이 사이클의 첫 단계다.
+ * 이미 올바른 데이터에는 아무 변화가 없습니다(여러 번 호출해도 결과 동일).
+ */
+function repairCycleDirections(cycles) {
+    if (!cycles) return;
+    const MIN_STRAND_POINTS = 5;
+    const cycleList = Object.values(cycles).filter(c => c);
+
+    // 1) 라벨 뒤바뀜 검사: 방전 가닥은 전압 하강(-1), 충전 가닥은 전압 상승(+1)이어야 한다
+    let consistent = 0;
+    let swapped = 0;
+    cycleList.forEach(c => {
+        [[c.sodiation, -1], [c.desodiation, 1]].forEach(([strand, expected]) => {
+            if (!Array.isArray(strand) || strand.length < MIN_STRAND_POINTS) return;
+            const dir = detectSegmentDirection(strand);
+            if (dir === 0) return;
+            if (dir === expected) consistent++;
+            else swapped++;
+        });
+    });
+
+    if (swapped > consistent) {
+        cycleList.forEach(c => {
+            const strand = c.sodiation;
+            c.sodiation = c.desodiation;
+            c.desodiation = strand;
+            const cap = c.totalDischargeCap;
+            c.totalDischargeCap = c.totalChargeCap;
+            c.totalChargeCap = cap;
+        });
+    }
+
+    // 2) chargeFirst 가 없는 데이터: 용량이 더 큰 쪽을 첫 단계로 추정 (사이클별 다수결)
+    if (cycleList.some(c => typeof c.chargeFirst === 'boolean')) return;
+    let chargeLarger = 0;
+    let dischargeLarger = 0;
+    cycleList.forEach(c => {
+        if (!(c.totalChargeCap > 0) || !(c.totalDischargeCap > 0)) return;
+        if (c.totalChargeCap > c.totalDischargeCap) chargeLarger++;
+        else if (c.totalDischargeCap > c.totalChargeCap) dischargeLarger++;
+    });
+    if (chargeLarger === dischargeLarger) return;
+    cycleList.forEach(c => { c.chargeFirst = chargeLarger > dischargeLarger; });
+}
+
+/**
  * 엑셀 또는 텍스트 파일에서 파싱된 행 데이터를 정규화하고,
  * 사이클 컬럼이 없거나 불명확한 경우 Rest 구간을 자동 감지하여 스킵하고 사이클을 쪼갭니다.
  */
